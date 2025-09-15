@@ -1,4 +1,7 @@
 // pages/api/submit-attendance.js
+// Ensure process timezone is set early for this process (helps some hosts)
+process.env.TZ = process.env.TZ || "Asia/Kolkata";
+
 import connectDB from "../../lib/mongodb";
 import Attendance from "../../models/Attendance";
 import User from "../../models/User";
@@ -11,10 +14,17 @@ const MIN_REPEAT_SECONDS =
     : 60;
 const EFFECTIVE_MIN_REPEAT_SECONDS = Math.max(30, MIN_REPEAT_SECONDS);
 
-// Helpers ---------------------------------------------------------
+// Helpers
+// Use Date.now() with moment.tz to get a moment anchored to IST regardless of server TZ
 const nowIST = () => moment.tz(Date.now(), APP_TZ);
-const make12 = (m) => m.format("hh:mm:ss A"); // canonical format "02:01:12 PM"
 
+// canonical 12-hour with uppercase AM/PM
+const make12 = (m) => m.format("hh:mm:ss A"); // e.g. "02:09:11 PM"
+
+// IST ISO with offset, e.g. "2025-09-15T14:09:11+05:30"
+const makeIstIso = (m) => m.format(); 
+
+// Flexible parser: accepts "hh:mm:ss A", "HH:mm:ss", or many other reasonable inputs
 function parseDateTimeFlexible(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
   // try 12-hour with AM/PM
@@ -23,7 +33,7 @@ function parseDateTimeFlexible(dateStr, timeStr) {
   // try 24-hour
   mm = moment.tz(`${dateStr} ${timeStr}`, "YYYY-MM-DD HH:mm:ss", APP_TZ);
   if (mm.isValid()) return mm;
-  // fallback generic
+  // fallback generic parse in APP_TZ
   mm = moment.tz(`${dateStr} ${timeStr}`, APP_TZ);
   return mm.isValid() ? mm : null;
 }
@@ -35,7 +45,7 @@ function secondsToHhMmSs(sec) {
   return `${hh}:${mm}:${ss}`;
 }
 
-// Normalize stored punchIn/punchOut strings to canonical format (if parseable)
+// Normalize stored strings to canonical format and persist if changed
 async function normalizeRecordTimes(record) {
   let changed = false;
   if (record?.punchIn) {
@@ -67,8 +77,8 @@ async function normalizeRecordTimes(record) {
   }
   return record;
 }
-// ----------------------------------------------------------------
 
+// Handler
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ message: "Method Not Allowed" });
 
@@ -82,22 +92,21 @@ export default async function handler(req, res) {
 
     const uidStr = String(userId);
     const user = await User.findOne({ userId: uidStr }).lean().catch(() => null);
-
     const name = typeof reqName === "string" && reqName.trim() ? reqName.trim() : user?.name ?? "";
     const role = typeof reqRole === "string" && reqRole.trim() ? reqRole.trim() : user?.role ?? "";
 
     const today = nowIST().format("YYYY-MM-DD");
 
-    // find today's record
+    // find & normalize existing record
     let record = await Attendance.findOne({ userId: uidStr, date: today });
-
-    // Normalize times if record exists (fix older inconsistent formats)
     if (record) {
-      // convert Mongoose doc to full doc and normalize in-place
       await normalizeRecordTimes(record);
-      // re-fetch to ensure we have fresh values (optional)
       record = await Attendance.findOne({ userId: uidStr, date: today });
     }
+
+    // debug: log server-side IST time so you can inspect Render logs
+    const debugNow = nowIST();
+    console.log(`[attendance] server nowIST: ${debugNow.format()} (offset ${debugNow.format("Z")}) action=${action} user=${uidStr}`);
 
     const buildResponse = (msg, statusLabel, rec, duration = null, extra = {}) => ({
       message: msg,
@@ -111,18 +120,23 @@ export default async function handler(req, res) {
       ...extra,
     });
 
-    // ACTION = IN
+    // ACTION: IN
     if (action === "in") {
       if (!record) {
         const nowM = nowIST();
         const punchInStr = make12(nowM);
+        const recordedAtIst = makeIstIso(nowM);
         const newRec = new Attendance({
           userId: uidStr,
           name,
           role,
           date: today,
+          // canonical time string (IST)
           punchIn: punchInStr,
+          // recordedAt: UTC Date (keeps DB Date semantics)
           recordedAt: nowM.toDate(),
+          // helpful explicit IST ISO string for inspection in DB
+          recordedAtIst,
         });
         await newRec.save();
         return res.status(200).json(buildResponse("Punched In Successfully", "Punched In", newRec));
@@ -144,7 +158,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // ACTION = OUT
+    // ACTION: OUT
     if (action === "out") {
       if (!record) {
         return res.status(400).json({ message: "No punch-in found for today. Please punch in first." });
@@ -155,6 +169,7 @@ export default async function handler(req, res) {
         if (name) record.name = name;
         if (role) record.role = role;
         record.recordedAt = nowM.toDate();
+        record.recordedAtIst = makeIstIso(nowM);
         await record.save();
         return res.status(200).json(buildResponse("Repaired missing punchIn", "Punched In", record));
       }
@@ -162,6 +177,7 @@ export default async function handler(req, res) {
         return res.status(200).json(buildResponse("Already Punched Out", "Punched Out", record));
       }
 
+      // use a single nowMoment (IST) for elapsed-check and stored punchOut
       const nowMoment = nowIST();
       const inMoment = parseDateTimeFlexible(record.date, record.punchIn);
       if (!inMoment) {
@@ -185,9 +201,12 @@ export default async function handler(req, res) {
         });
       }
 
-      // Save punchOut with canonical 12-hour format
       const outStr = make12(nowMoment);
-      const update = { punchOut: outStr, recordedAt: nowMoment.toDate() };
+      const update = {
+        punchOut: outStr,
+        recordedAt: nowMoment.toDate(),
+        recordedAtIst: makeIstIso(nowMoment),
+      };
       if (name) update.name = name;
       if (role) update.role = role;
 
@@ -196,7 +215,7 @@ export default async function handler(req, res) {
           userId: uidStr,
           date: today,
           punchOut: { $in: [null, undefined, ""] },
-          punchIn: record.punchIn,
+          punchIn: record.punchIn, // match by original value
         },
         { $set: update },
         { new: true }
@@ -230,6 +249,7 @@ export default async function handler(req, res) {
         });
       }
 
+      // success -> compute duration
       let duration = null;
       try {
         const inM2 = parseDateTimeFlexible(updated.date, updated.punchIn);
