@@ -13,13 +13,14 @@ const MIN_REPEAT_SECONDS =
 const EFFECTIVE_MIN_REPEAT_SECONDS = Math.max(30, MIN_REPEAT_SECONDS);
 
 // Helpers ---------------------------------------------------------
-const nowIST = () => moment().tz(APP_TZ);
+// Use moment.tz with Date.now() to produce a moment *in IST reliably*
+const nowIST = () => moment.tz(Date.now(), APP_TZ);
 
-// Produce 12-hour display (with AM/PM)
-const make12 = (m) => m.format("hh:mm:ss A"); // "08:30:12 AM"
+// Produce 12-hour display (with AM/PM, uppercase)
+const make12 = (m) => m.format("hh:mm:ss A"); // e.g. "01:56:11 PM"
 
 // Accept either stored 12-hour ("hh:mm:ss A") or 24-hour ("HH:mm:ss")
-// Return a moment in APP_TZ
+// Return a moment in APP_TZ or null
 function parseDateTimeFlexible(dateStr, timeStr) {
   if (!timeStr || !dateStr) return null;
 
@@ -31,7 +32,7 @@ function parseDateTimeFlexible(dateStr, timeStr) {
   mm = moment.tz(`${dateStr} ${timeStr}`, "YYYY-MM-DD HH:mm:ss", APP_TZ);
   if (mm.isValid()) return mm;
 
-  // try generic parse fallback
+  // try generic parse fallback (less preferred)
   mm = moment.tz(`${dateStr} ${timeStr}`, APP_TZ);
   return mm.isValid() ? mm : null;
 }
@@ -43,7 +44,6 @@ function secondsToHhMmSs(sec) {
   const ss = String(sec % 60).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
 }
-
 // ----------------------------------------------------------------
 
 export default async function handler(req, res) {
@@ -52,7 +52,10 @@ export default async function handler(req, res) {
   try {
     await connectDB();
 
-    const { userId, name: reqName, role: reqRole } = req.body || {};
+    const { userId, name: reqName, role: reqRole, action: rawAction } = req.body || {};
+    // default action = 'in' (avoid accidental immediate punch-out)
+    const action = (rawAction || "in").toString().toLowerCase();
+
     if (!userId) return res.status(400).json({ message: "Missing userId" });
 
     const uidStr = String(userId);
@@ -66,108 +69,75 @@ export default async function handler(req, res) {
     // find today's record
     let record = await Attendance.findOne({ userId: uidStr, date: today });
 
-    // 1) No record -> Punch In
-    if (!record) {
-      const nowM = nowIST();
-      const punchInStr = make12(nowM); // store 12-hour
-      const newRec = new Attendance({
-        userId: uidStr,
-        name,
-        role,
-        date: today,
-        punchIn: punchInStr,
-        recordedAt: nowM.toDate(),
-      });
-      await newRec.save();
+    // helper to build response shape
+    const buildResponse = (msg, statusLabel, rec, duration = null, extra = {}) => ({
+      message: msg,
+      status: statusLabel,
+      date: rec?.date ?? today,
+      punchIn: rec?.punchIn ?? null,
+      punchOut: rec?.punchOut ?? null,
+      duration,
+      name: rec?.name ?? name,
+      role: rec?.role ?? role,
+      ...extra,
+    });
 
-      return res.status(200).json({
-        message: "Punched In Successfully",
-        status: "Punched In",
-        date: newRec.date,
-        punchIn: newRec.punchIn,
-        punchOut: null,
-        duration: null,
-        name: newRec.name,
-        role: newRec.role,
-      });
-    }
-
-    // 2) Repair missing punchIn (only if no punchOut)
-    if ((!record.punchIn || String(record.punchIn).trim() === "") && !record.punchOut) {
-      const nowM = nowIST();
-      record.punchIn = make12(nowM);
-      if (name) record.name = name;
-      if (role) record.role = role;
-      record.recordedAt = nowM.toDate();
-      await record.save();
-
-      return res.status(200).json({
-        message: "Punched In (repaired missing punchIn)",
-        status: "Punched In",
-        date: record.date,
-        punchIn: record.punchIn,
-        punchOut: null,
-        duration: null,
-        name: record.name,
-        role: record.role,
-      });
-    }
-
-    // 3) If punched in but not punched out -> try to punch out
-    if (record.punchIn && !record.punchOut) {
-      // Refresh record
-      record = await Attendance.findOne({ userId: uidStr, date: today });
-
-      // fallback if still missing punchIn
-      if (!record || !record.punchIn) {
+    // ACTION: IN (create or return info)
+    if (action === "in") {
+      if (!record) {
         const nowM = nowIST();
         const punchInStr = make12(nowM);
-        if (!record) {
-          const newRec = new Attendance({
-            userId: uidStr,
-            name,
-            role,
-            date: today,
-            punchIn: punchInStr,
-            recordedAt: nowM.toDate(),
-          });
-          await newRec.save();
-          return res.status(200).json({
-            message: "Punched In (created fallback record)",
-            status: "Punched In",
-            date: newRec.date,
-            punchIn: newRec.punchIn,
-            punchOut: null,
-            duration: null,
-            name: newRec.name,
-            role: newRec.role,
-          });
-        } else {
-          record.punchIn = punchInStr;
-          if (name) record.name = name;
-          if (role) record.role = role;
-          record.recordedAt = nowM.toDate();
-          await record.save();
-          return res.status(200).json({
-            message: "Punched In (repaired missing punchIn)",
-            status: "Punched In",
-            date: record.date,
-            punchIn: record.punchIn,
-            punchOut: null,
-            duration: null,
-            name: record.name,
-            role: record.role,
-          });
-        }
+        const newRec = new Attendance({
+          userId: uidStr,
+          name,
+          role,
+          date: today,
+          punchIn: punchInStr,
+          recordedAt: nowM.toDate(),
+        });
+        await newRec.save();
+        return res.status(200).json(buildResponse("Punched In Successfully", "Punched In", newRec));
       }
 
-      // Use a single nowMoment for elapsed-check + punchOut storage
+      if (record.punchIn && !record.punchOut) {
+        const inM = parseDateTimeFlexible(record.date, record.punchIn);
+        const nowM = nowIST();
+        const elapsedSec = inM ? Math.floor(Math.max(0, nowM.valueOf() - inM.valueOf()) / 1000) : null;
+        return res.status(200).json({
+          ...buildResponse("Already Punched In", "Punched In", record),
+          elapsedSec,
+          waitSeconds: elapsedSec !== null ? Math.max(0, EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec) : null,
+        });
+      }
+
+      if (record.punchIn && record.punchOut) {
+        return res.status(200).json(buildResponse("Already Punched Out (today)", "Punched Out", record));
+      }
+    }
+
+    // ACTION: OUT (explicit punch out)
+    if (action === "out") {
+      if (!record) {
+        return res.status(400).json({ message: "No punch-in found for today. Please punch in first." });
+      }
+      if (!record.punchIn) {
+        const nowM = nowIST();
+        record.punchIn = make12(nowM);
+        if (name) record.name = name;
+        if (role) record.role = role;
+        record.recordedAt = nowM.toDate();
+        await record.save();
+        return res.status(200).json(buildResponse("Repaired missing punchIn", "Punched In", record));
+      }
+      if (record.punchOut) {
+        return res.status(200).json(buildResponse("Already Punched Out", "Punched Out", record));
+      }
+
+      // single nowMoment used for elapsed-check + punchOut storage (IST)
       const nowMoment = nowIST();
 
-      // Parse stored punchIn flexibly (12h or 24h)
       const inMoment = parseDateTimeFlexible(record.date, record.punchIn);
       if (!inMoment) {
-        // cannot parse stored punchIn -> return an error
         console.error("[submit-attendance] could not parse stored punchIn:", record.punchIn);
         return res.status(500).json({ message: "Server: cannot parse stored punchIn time." });
       }
@@ -175,8 +145,9 @@ export default async function handler(req, res) {
       const elapsedSec = Math.floor(Math.max(0, nowMoment.valueOf() - inMoment.valueOf()) / 1000);
 
       if (elapsedSec < EFFECTIVE_MIN_REPEAT_SECONDS) {
+        const wait = EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec;
         return res.status(429).json({
-          message: ``,
+          message: `Too soon to punch out: you punched in ${elapsedSec} second(s) ago. Please wait ${wait} more second(s).`,
           status: "Punched In",
           date: record.date,
           punchIn: record.punchIn,
@@ -184,15 +155,13 @@ export default async function handler(req, res) {
           duration: null,
           name: record.name,
           role: record.role,
+          waitSeconds: wait,
         });
       }
 
       // Now set punchOut using the same nowMoment and 12-hour format
       const outStr = make12(nowMoment);
-      const update = {
-        punchOut: outStr,
-        recordedAt: nowMoment.toDate(),
-      };
+      const update = { punchOut: outStr, recordedAt: nowMoment.toDate() };
       if (name) update.name = name;
       if (role) update.role = role;
 
@@ -201,23 +170,22 @@ export default async function handler(req, res) {
           userId: uidStr,
           date: today,
           punchOut: { $in: [null, undefined, ""] },
-          // match by original stored punchIn string to avoid races
-          punchIn: record.punchIn,
+          punchIn: record.punchIn, // match by original stored punchIn
         },
         { $set: update },
         { new: true }
       );
 
       if (!updated) {
-        // race lost or another writer beat us - return latest
+        // race lost — return latest
         const latest = await Attendance.findOne({ userId: uidStr, date: today });
         let computedDuration = null;
         try {
           if (latest?.punchIn && latest?.punchOut) {
-            const inM = parseDateTimeFlexible(latest.date, latest.punchIn);
-            const outM = parseDateTimeFlexible(latest.date, latest.punchOut);
-            if (inM && outM) {
-              const diff = Math.max(0, Math.floor((outM.valueOf() - inM.valueOf()) / 1000));
+            const inM2 = parseDateTimeFlexible(latest.date, latest.punchIn);
+            const outM2 = parseDateTimeFlexible(latest.date, latest.punchOut);
+            if (inM2 && outM2) {
+              const diff = Math.max(0, Math.floor((outM2.valueOf() - inM2.valueOf()) / 1000));
               computedDuration = secondsToHhMmSs(diff);
             }
           }
@@ -250,43 +218,11 @@ export default async function handler(req, res) {
         duration = null;
       }
 
-      return res.status(200).json({
-        message: "Punched Out Successfully",
-        status: "Punched Out",
-        date: updated.date,
-        punchIn: updated.punchIn,
-        punchOut: updated.punchOut,
-        duration,
-        name: updated.name,
-        role: updated.role,
-      });
+      return res.status(200).json(buildResponse("Punched Out Successfully", "Punched Out", updated, duration));
     }
 
-    // 4) Already has both -> return with computed duration
-    let computedDuration = null;
-    try {
-      if (record.punchIn && record.punchOut) {
-        const inM = parseDateTimeFlexible(record.date, record.punchIn);
-        const outM = parseDateTimeFlexible(record.date, record.punchOut);
-        if (inM && outM) {
-          const diff = Math.max(0, Math.floor((outM.valueOf() - inM.valueOf()) / 1000));
-          computedDuration = secondsToHhMmSs(diff);
-        }
-      }
-    } catch {
-      computedDuration = null;
-    }
-
-    return res.status(200).json({
-      message: "Already Punched Out",
-      status: "Punched Out",
-      date: record.date,
-      punchIn: record.punchIn,
-      punchOut: record.punchOut,
-      duration: computedDuration,
-      name: record.name,
-      role: record.role,
-    });
+    // fallback
+    return res.status(400).json({ message: "Invalid action. Use action:'in' or action:'out'." });
   } catch (err) {
     console.error("[Submit Attendance API Error]", err);
     return res.status(500).json({

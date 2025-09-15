@@ -147,7 +147,7 @@ export default function SuccessPage() {
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+        {/* {error && <p className="text-sm text-red-600 mb-3">{error}</p>} */}
 
         <Link href="/" className="mt-4 inline-block text-blue-500 hover:underline text-sm font-medium">🏠 Back to Home</Link>
       </div>
