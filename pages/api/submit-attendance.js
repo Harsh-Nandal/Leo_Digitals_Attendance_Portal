@@ -168,13 +168,26 @@ export default async function handler(req, res) {
 
       // single nowMoment for elapsed-check and saved punchOut (IST)
       const nowMoment = nowIST();
-      const inMoment = parseDateTimeFlexible(record.date, record.punchIn);
-      if (!inMoment) {
+
+      // --- NEW: ensure stored punchIn is canonical BEFORE using it ---
+      const parsedIn = parseDateTimeFlexible(record.date, record.punchIn);
+      if (!parsedIn) {
         console.error("[submit-attendance] could not parse stored punchIn:", record.punchIn);
         return res.status(500).json({ message: "Server: cannot parse stored punchIn time." });
       }
+      const canonicalPunchIn = make12(parsedIn);
+      // if canonical differs, persist the canonical value now so DB matches punchOut format
+      if (canonicalPunchIn !== record.punchIn) {
+        try {
+          await Attendance.updateOne({ _id: record._id }, { $set: { punchIn: canonicalPunchIn } });
+          // update local record too
+          record.punchIn = canonicalPunchIn;
+        } catch (e) {
+          console.warn("[submit-attendance] failed to persist canonical punchIn:", e);
+        }
+      }
 
-      const elapsedSec = Math.floor(Math.max(0, nowMoment.valueOf() - inMoment.valueOf()) / 1000);
+      const elapsedSec = Math.floor(Math.max(0, nowMoment.valueOf() - parsedIn.valueOf()) / 1000);
       if (elapsedSec < EFFECTIVE_MIN_REPEAT_SECONDS) {
         const wait = EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec;
         return res.status(429).json({
@@ -190,7 +203,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // Prepare update. NOTE: removed strict punchIn string match to avoid format/race mismatches.
+      // Prepare update (store punchOut canonical + recordedAtIst)
       const outStr = make12(nowMoment);
       const update = {
         punchOut: outStr,
@@ -200,7 +213,7 @@ export default async function handler(req, res) {
       if (name) update.name = name;
       if (role) update.role = role;
 
-      // Atomic update by userId + date + empty punchOut (no fragile punchIn equality).
+      // Atomic update by userId + date + empty punchOut
       const updated = await Attendance.findOneAndUpdate(
         {
           userId: uidStr,
