@@ -1,5 +1,5 @@
 // pages/api/submit-attendance.js
-// Ensure process timezone is set early for this process (helps some hosts)
+// Set process TZ early; restart your Render service after deploying.
 process.env.TZ = process.env.TZ || "Asia/Kolkata";
 
 import connectDB from "../../lib/mongodb";
@@ -15,16 +15,10 @@ const MIN_REPEAT_SECONDS =
 const EFFECTIVE_MIN_REPEAT_SECONDS = Math.max(30, MIN_REPEAT_SECONDS);
 
 // Helpers
-// Use Date.now() with moment.tz to get a moment anchored to IST regardless of server TZ
-const nowIST = () => moment.tz(Date.now(), APP_TZ);
+const nowIST = () => moment().tz(APP_TZ); // reliable IST moment
+const make12 = (m) => m.format("hh:mm:ss A"); // canonical "02:09:11 PM"
+const makeIstIso = (m) => m.format(); // ISO with +05:30
 
-// canonical 12-hour with uppercase AM/PM
-const make12 = (m) => m.format("hh:mm:ss A"); // e.g. "02:09:11 PM"
-
-// IST ISO with offset, e.g. "2025-09-15T14:09:11+05:30"
-const makeIstIso = (m) => m.format(); 
-
-// Flexible parser: accepts "hh:mm:ss A", "HH:mm:ss", or many other reasonable inputs
 function parseDateTimeFlexible(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
   // try 12-hour with AM/PM
@@ -33,7 +27,7 @@ function parseDateTimeFlexible(dateStr, timeStr) {
   // try 24-hour
   mm = moment.tz(`${dateStr} ${timeStr}`, "YYYY-MM-DD HH:mm:ss", APP_TZ);
   if (mm.isValid()) return mm;
-  // fallback generic parse in APP_TZ
+  // fallback
   mm = moment.tz(`${dateStr} ${timeStr}`, APP_TZ);
   return mm.isValid() ? mm : null;
 }
@@ -86,7 +80,7 @@ export default async function handler(req, res) {
     await connectDB();
 
     const { userId, name: reqName, role: reqRole, action: rawAction } = req.body || {};
-    const action = (rawAction || "in").toString().toLowerCase(); // "in" or "out"
+    const action = (rawAction || "in").toString().toLowerCase();
 
     if (!userId) return res.status(400).json({ message: "Missing userId" });
 
@@ -104,7 +98,7 @@ export default async function handler(req, res) {
       record = await Attendance.findOne({ userId: uidStr, date: today });
     }
 
-    // debug: log server-side IST time so you can inspect Render logs
+    // debug logging (check Render logs)
     const debugNow = nowIST();
     console.log(`[attendance] server nowIST: ${debugNow.format()} (offset ${debugNow.format("Z")}) action=${action} user=${uidStr}`);
 
@@ -131,11 +125,8 @@ export default async function handler(req, res) {
           name,
           role,
           date: today,
-          // canonical time string (IST)
           punchIn: punchInStr,
-          // recordedAt: UTC Date (keeps DB Date semantics)
           recordedAt: nowM.toDate(),
-          // helpful explicit IST ISO string for inspection in DB
           recordedAtIst,
         });
         await newRec.save();
@@ -160,9 +151,8 @@ export default async function handler(req, res) {
 
     // ACTION: OUT
     if (action === "out") {
-      if (!record) {
-        return res.status(400).json({ message: "No punch-in found for today. Please punch in first." });
-      }
+      if (!record) return res.status(400).json({ message: "No punch-in found for today. Please punch in first." });
+
       if (!record.punchIn) {
         const nowM = nowIST();
         record.punchIn = make12(nowM);
@@ -173,11 +163,10 @@ export default async function handler(req, res) {
         await record.save();
         return res.status(200).json(buildResponse("Repaired missing punchIn", "Punched In", record));
       }
-      if (record.punchOut) {
-        return res.status(200).json(buildResponse("Already Punched Out", "Punched Out", record));
-      }
 
-      // use a single nowMoment (IST) for elapsed-check and stored punchOut
+      if (record.punchOut) return res.status(200).json(buildResponse("Already Punched Out", "Punched Out", record));
+
+      // single nowMoment for elapsed-check and saved punchOut (IST)
       const nowMoment = nowIST();
       const inMoment = parseDateTimeFlexible(record.date, record.punchIn);
       if (!inMoment) {
@@ -201,6 +190,7 @@ export default async function handler(req, res) {
         });
       }
 
+      // Prepare update. NOTE: removed strict punchIn string match to avoid format/race mismatches.
       const outStr = make12(nowMoment);
       const update = {
         punchOut: outStr,
@@ -210,18 +200,19 @@ export default async function handler(req, res) {
       if (name) update.name = name;
       if (role) update.role = role;
 
+      // Atomic update by userId + date + empty punchOut (no fragile punchIn equality).
       const updated = await Attendance.findOneAndUpdate(
         {
           userId: uidStr,
           date: today,
           punchOut: { $in: [null, undefined, ""] },
-          punchIn: record.punchIn, // match by original value
         },
         { $set: update },
         { new: true }
       );
 
       if (!updated) {
+        // race lost — return latest
         const latest = await Attendance.findOne({ userId: uidStr, date: today });
         let computedDuration = null;
         try {
