@@ -124,50 +124,285 @@ export default function StudentPage() {
     setTableRecords(data.records || []);
   };
 
+  // ---------- Helper: sanitize filename ----------
+  const sanitizeFilename = (name = "Attendance") =>
+    name.replace(/[\/\\?%*:|"<>]/g, "_");
+
+  // ---------- Improved PDF generator ----------
   const downloadPDF = () => {
-    if (!tableRecords.length) return;
+    if (!tableRecords || tableRecords.length === 0) return;
 
-    const doc = new jsPDF();
-    doc.text(tableTitle || "Attendance", 14, 12);
+    const doc = new jsPDF({
+      unit: "pt",
+      format: "a4",
+    });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = { top: 80, left: 40, right: 40, bottom: 60 };
 
+    // header/footer rendering for each page
+    const header = (data) => {
+      const title = tableTitle || "Attendance";
+      const name = student?.name || "";
+      const role = student?.role || "";
+
+      doc.setFontSize(12);
+      doc.setTextColor(40);
+      doc.setFont("helvetica", "bold");
+      doc.text(name, margin.left, 30);
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text(role, margin.left, 46);
+
+      // title centered
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      const centerX = pageWidth / 2;
+      doc.text(title, centerX, 40, { align: "center" });
+
+      // small line under header
+      doc.setDrawColor(200);
+      doc.setLineWidth(0.5);
+      doc.line(margin.left, 54, pageWidth - margin.right, 54);
+    };
+
+    const footer = (data) => {
+      const page = doc.internal.getNumberOfPages();
+      const str = `Page ${data.pageNumber} of ${page}`;
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text(str, pageWidth - margin.right, doc.internal.pageSize.getHeight() - 20, {
+        align: "right",
+      });
+
+      // Draw a subtle top border for footer
+      doc.setDrawColor(230);
+      doc.setLineWidth(0.5);
+      doc.line(margin.left, doc.internal.pageSize.getHeight() - 40, pageWidth - margin.right, doc.internal.pageSize.getHeight() - 40);
+    };
+
+    // columns and body
+    const head = [["Date", "Punch In", "Punch Out"]];
+    const body = tableRecords.map((r) => [
+      r.date,
+      r.punchIn ?? "—",
+      r.punchOut ?? "—",
+    ]);
+
+    // Use autoTable with didDrawPage to attach header/footer
     autoTable(doc, {
-      head: [["Date", "Punch In", "Punch Out"]],
-      body: tableRecords.map((r) => [
-        r.date,
-        r.punchIn ?? "—",
-        r.punchOut ?? "—",
-      ]),
-      startY: 18,
+      head: head,
+      body: body,
+      startY: margin.top,
+      margin: { left: margin.left, right: margin.right, bottom: margin.bottom },
+      styles: {
+        font: "helvetica",
+        fontSize: 10,
+        cellPadding: 6,
+        overflow: "linebreak",
+        valign: "middle",
+      },
+      headStyles: {
+        fillColor: [240, 240, 240],
+        textColor: 20,
+        fontStyle: "bold",
+      },
+      alternateRowStyles: { fillColor: [250, 250, 250] },
+      tableWidth: "auto",
+      didDrawPage: function (data) {
+        header(data);
+        footer(data);
+      },
+      willDrawCell: function (data) {
+        // add subtle border color tweak if desired
+      },
+      // for long text, wrap
+      columnStyles: {
+        0: { cellWidth: 120 }, // Date
+        1: { cellWidth: 170 }, // Punch In
+        2: { cellWidth: 170 }, // Punch Out
+      },
     });
 
-    const safe = (tableTitle || "Attendance").replace(/[\/\\?%*:|"<>]/g, "_");
+    // Save
+    const safe = sanitizeFilename(tableTitle || "Attendance");
     doc.save(`${safe}.pdf`);
   };
 
+  // ---------- Improved Print Table ----------
   const printTable = () => {
-    const printContent = `
-      <h2>${tableTitle}</h2>
-      <table border="1" cellpadding="5" cellspacing="0">
-        <tr>
-          <th>Date</th>
-          <th>Punch In</th>
-          <th>Punch Out</th>
-        </tr>
-        ${tableRecords
-          .map(
-            (r) => `<tr>
-                    <td>${r.date}</td>
-                    <td>${r.punchIn || "—"}</td>
-                    <td>${r.punchOut || "—"}</td>
-                  </tr>`
-          )
-          .join("")}
-      </table>
+    if (!tableRecords || tableRecords.length === 0) return;
+
+    // build HTML for print
+    const sanitizedTitle = tableTitle || "Attendance";
+    const now = new Date();
+    const generatedAt = now.toLocaleString();
+
+    const name = student?.name || "";
+    const role = student?.role || "";
+
+    const rowsHtml = tableRecords
+      .map(
+        (r, idx) => `<tr>
+          <td class="td">${r.date}</td>
+          <td class="td">${r.punchIn ?? "—"}</td>
+          <td class="td">${r.punchOut ?? "—"}</td>
+        </tr>`
+      )
+      .join("");
+
+    const style = `
+      <style>
+        /* Page */
+        @page { margin: 40pt; }
+        html, body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+          color: #111827;
+          margin: 0;
+          padding: 0;
+        }
+
+        .print-wrapper {
+          padding: 10pt 12pt;
+        }
+
+        .header {
+          display: block;
+          margin-bottom: 8pt;
+          padding-bottom: 6pt;
+          border-bottom: 1px solid #e5e7eb;
+        }
+        .brand {
+          font-size: 16pt;
+          font-weight: 700;
+        }
+        .meta {
+          font-size: 10pt;
+          color: #6b7280;
+          margin-top: 4px;
+        }
+
+        .title {
+          text-align: center;
+          font-size: 12pt;
+          font-weight: 700;
+          margin: 10px 0 8px 0;
+        }
+
+        table.att-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 8px;
+          font-size: 10.5pt;
+        }
+
+        table.att-table thead {
+          background: #f3f4f6;
+        }
+
+        table.att-table thead th {
+          padding: 8px 10px;
+          text-align: left;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        table.att-table tbody td {
+          padding: 8px 10px;
+          border-bottom: 1px solid #f3f4f6;
+        }
+
+        table.att-table tr:nth-child(even) {
+          background: #fbfbfb;
+        }
+
+        /* Make the thead repeat on each printed page */
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+
+        /* Footer area (will repeat) */
+        .print-footer {
+          width: 100%;
+          display: block;
+          margin-top: 8pt;
+          padding-top: 6pt;
+          border-top: 1px solid #e5e7eb;
+          font-size: 9pt;
+          color: #6b7280;
+          text-align: right;
+        }
+
+        /* Hide non-essential elements when printing (if any) */
+        @media print {
+          body { -webkit-print-color-adjust: exact; }
+        }
+      </style>
     `;
-    const printWindow = window.open("", "", "height=600,width=800");
-    printWindow.document.write(printContent);
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${sanitizedTitle}</title>
+          ${style}
+        </head>
+        <body>
+          <div class="print-wrapper">
+            <div class="header">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div class="brand">${name}</div>
+                  <div class="meta">${role}</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="meta">Generated: ${generatedAt}</div>
+                  <div class="meta">${sanitizedTitle}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="title">${sanitizedTitle}</div>
+
+            <table class="att-table" role="table" aria-label="Attendance table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Punch In</th>
+                  <th>Punch Out</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+
+            <div class="print-footer">
+              <span>Powered by Desinerz Academy</span>
+            </div>
+          </div>
+
+          <script>
+            // Give the browser a moment to lay out the page, then print and close
+            window.onload = function () {
+              setTimeout(function () {
+                window.print();
+                // Some browsers block window.close(); in user-initiated contexts, but try it
+                setTimeout(function () { window.close(); }, 500);
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      alert("Please allow popups for this site to print.");
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.print();
   };
 
   if (loading)
