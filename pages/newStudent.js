@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../styles/Register.module.css";
+import Link from "next/link";
 
 export default function Register() {
   const [name, setName] = useState("");
@@ -19,7 +20,9 @@ export default function Register() {
   const router = useRouter();
 
   function generateUniqueId() {
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    return `${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 9)}`;
   }
 
   useEffect(() => {
@@ -28,7 +31,9 @@ export default function Register() {
 
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
         if (!mounted) return;
         streamRef.current = stream;
         if (videoRef.current) {
@@ -105,7 +110,10 @@ export default function Register() {
 
       if (res.ok) {
         if (json.rekognitionError) {
-          alert("Registered, but Rekognition indexing failed: " + json.rekognitionError);
+          alert(
+            "Registered, but Rekognition indexing failed: " +
+              json.rekognitionError
+          );
         }
         router.push({
           pathname: "/success",
@@ -130,6 +138,13 @@ export default function Register() {
           <div className={styles.loader}>Submitting...</div>
         ) : (
           <>
+            <Link href="/" className="block text-center mb-4">
+              <img
+                src="/DesinerzAcademyDark.png"
+                alt="Logo"
+                className="w-full max-w-[200px] h-auto drop-shadow-lg mx-auto"
+              />
+            </Link>
             <h2 className="text-xl font-bold text-center mb-4 text-gray-800">
               Register Student / Faculty
             </h2>
@@ -147,7 +162,7 @@ export default function Register() {
               <input
                 type="text"
                 className="w-full px-3 py-2 border rounded-lg focus:ring focus:outline-none"
-                value={userId}
+                placeholder="Mobile NO."
                 onChange={(e) => setUserId(e.target.value)}
                 required
                 title="Unique ID (auto-generated, editable)"
