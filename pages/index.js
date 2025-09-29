@@ -17,6 +17,19 @@ export default function Home() {
 
   const handleClose = () => setShowPopup(false);
 
+  useEffect(() => {
+    const askPermission = async () => {
+      try {
+        const result = await Permissions.request({ name: "camera" });
+        console.log("Camera permission result:", result);
+      } catch (err) {
+        console.error("Permission request failed:", err);
+      }
+    };
+
+    askPermission();
+  }, []);
+
   // Start video stream (camera)
   useEffect(() => {
     let currentStream;
@@ -166,9 +179,9 @@ export default function Home() {
           name
         )}&role=${encodeURIComponent(role)}&userId=${encodeURIComponent(
           userId
-        )}&image=${encodeURIComponent(imageUrl || "")}&imageData=${encodeURIComponent(
-          imageData
-        )}`;
+        )}&image=${encodeURIComponent(
+          imageUrl || ""
+        )}&imageData=${encodeURIComponent(imageData)}`;
 
         console.log("➡️ Redirecting to:", url);
         router.push(url);

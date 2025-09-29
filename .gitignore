@@ -35,3 +35,26 @@ Thumbs.db
 # Misc
 *.tmp
 .vercel
+
+# -------------------------
+# ANDROID / CAPACITOR STUFF (don’t push APK/native build files)
+# -------------------------
+android/
+ios/
+capacitor.config.json
+capacitor.config.ts
+capacitor.config.*.json
+capacitor.config.*.ts
+
+# Gradle / Android build cache
+.gradle/
+*.iml
+local.properties
+*.keystore
+*.jks
+*.apk
+*.aab
+
+# Android Studio specific
+captures/
+*.hprof
