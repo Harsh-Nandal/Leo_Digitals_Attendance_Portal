@@ -6,8 +6,8 @@
 // async function createAdmin() {
 //   await connectDB();
 
-//   const email = "admin@example.com";
-//   const plainPassword = "admin123";
+//   const email = "reach.desinerzacademy@gmail.com";
+//   const plainPassword = "portalbyjatinsir";
 
 //   const salt = await bcrypt.genSalt(10);
 //   const passwordHash = await bcrypt.hash(plainPassword, salt);

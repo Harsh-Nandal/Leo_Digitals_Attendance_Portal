@@ -1,6 +1,7 @@
 // pages/admin/login.js
 import { useState } from "react";
 import { useRouter } from "next/router";
+import Image from "next/image";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -38,6 +39,17 @@ export default function AdminLogin() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <Image
+            src="/DesinerzAcademyDark.png"
+            alt="Desinerz Academy Logo"
+            width={300}
+            height={300}
+            priority
+          />
+        </div>
+
         <h2 className="text-2xl font-bold text-gray-800 text-center mb-6">
           Admin Login
         </h2>
