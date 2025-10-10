@@ -1,11 +1,7 @@
 // pages/_app.js
 import Head from "next/head";
-<<<<<<< HEAD
 import { useState, useEffect } from "react";
-=======
-import { useState } from "react";
 import "../styles/globals.css";
->>>>>>> 750be60f6e04f56d1cf5e7e391f45e6ff1e09586
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import SplashScreen from "../components/SplashScreen";
@@ -13,11 +9,11 @@ import SplashScreen from "../components/SplashScreen";
 export default function MyApp({ Component, pageProps }) {
   const [appReady, setAppReady] = useState(false);
 
-<<<<<<< HEAD
   useEffect(() => {
-    // Detect WebView (Capacitor, Android WebView)
+    // ✅ Detect WebView (Capacitor, Android WebView)
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-    const inWebView = /\bwv\b/i.test(ua) || /Capacitor/i.test(ua) || /Android.*Version/i.test(ua);
+    const inWebView =
+      /\bwv\b/i.test(ua) || /Capacitor/i.test(ua) || /Android.*Version/i.test(ua);
 
     if (inWebView && typeof window !== "undefined" && "serviceWorker" in navigator) {
       (async () => {
@@ -31,7 +27,7 @@ export default function MyApp({ Component, pageProps }) {
           console.warn("Failed to unregister SW in WebView", err);
         }
 
-        // Try clearing caches
+        // ✅ Try clearing caches
         if (caches && caches.keys) {
           try {
             const keys = await caches.keys();
@@ -49,27 +45,13 @@ export default function MyApp({ Component, pageProps }) {
     <>
       <Head>
         {/* ✅ PWA & App Meta */}
-=======
-  return (
-    <>
-      <Head>
-        {/* PWA manifest */}
->>>>>>> 750be60f6e04f56d1cf5e7e391f45e6ff1e09586
         <link rel="manifest" href="/manifest.json" />
-
-        {/* Theme color (match manifest.theme_color) */}
         <meta name="theme-color" content="#000000" />
-
-        {/* Mobile / app-capable settings */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="Attendance Portal" />
 
-<<<<<<< HEAD
-        {/* ✅ Icons */}
-=======
-        {/* Icons — make sure these exact files exist in /public */}
->>>>>>> 750be60f6e04f56d1cf5e7e391f45e6ff1e09586
+        {/* ✅ Icons — make sure these exact files exist in /public/icons */}
         <link
           rel="icon"
           href="/icons/small-logo-Image.jpg"
@@ -83,25 +65,10 @@ export default function MyApp({ Component, pageProps }) {
           type="image/jpeg"
         />
 
-<<<<<<< HEAD
-        {/* ✅ Preload images */}
-=======
-        {/* Preload the large splash image for a smoother first paint.
-            Ensure SplashScreen uses /largeLogoImage.jpg (update component if needed) */}
->>>>>>> 750be60f6e04f56d1cf5e7e391f45e6ff1e09586
-        <link
-          rel="preload"
-          as="image"
-          href="/largeLogoImage.jpg"
-          type="image/jpeg"
-        />
-<<<<<<< HEAD
-      </Head>
+        {/* ✅ Preload splash image */}
+        <link rel="preload" as="image" href="/largeLogoImage.jpg" type="image/jpeg" />
 
-      {/* ✅ Splash screen until app is ready */}
-=======
-
-        {/* Tailwind CSS via CDN (keeping your existing setup) */}
+        {/* ✅ Tailwind CDN (if needed in addition to local styles) */}
         <script src="https://cdn.tailwindcss.com"></script>
         <script
           dangerouslySetInnerHTML={{
@@ -120,12 +87,11 @@ export default function MyApp({ Component, pageProps }) {
         />
       </Head>
 
-      {/* Show the splash screen until SplashScreen calls onFinish */}
->>>>>>> 750be60f6e04f56d1cf5e7e391f45e6ff1e09586
+      {/* ✅ Splash screen until app is ready */}
       {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
 
-      {/* Main app content */}
-      <div style={{ visibility: appReady ? "visible" : "visible" }}>
+      {/* ✅ Main app content */}
+      <div style={{ visibility: appReady ? "visible" : "hidden" }}>
         <Component {...pageProps} />
       </div>
     </>
