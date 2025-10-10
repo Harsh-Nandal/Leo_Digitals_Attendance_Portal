@@ -1,27 +1,38 @@
-"use client";
+// "use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function Home() {
-  // state & refs
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [loading, setLoading] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
-  const detectTimerRef = useRef(null);
+  const detectTimer = useRef(null);
   const runningDetection = useRef(false);
   const router = useRouter();
 
   const handleClose = () => setShowPopup(false);
 
+  useEffect(() => {
+    const askPermission = async () => {
+      try {
+        const result = await Permissions.request({ name: "camera" });
+        console.log("Camera permission result:", result);
+      } catch (err) {
+        console.error("Permission request failed:", err);
+      }
+    };
+
+    askPermission();
+  }, []);
+
   // Start video stream (camera)
   useEffect(() => {
     let currentStream;
-
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -34,13 +45,11 @@ export default function Home() {
           audio: false,
         });
         currentStream = stream;
-
-        const v = videoRef.current;
-        if (v) {
-          v.srcObject = stream;
-          v.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
             setVideoReady(true);
-            v.play?.();
+            videoRef.current?.play?.();
           };
         }
       } catch (err) {
@@ -50,8 +59,10 @@ export default function Home() {
     })();
 
     return () => {
-      if (detectTimerRef.current) clearInterval(detectTimerRef.current);
-      if (currentStream) currentStream.getTracks().forEach((t) => t.stop());
+      if (detectTimer.current) clearInterval(detectTimer.current);
+      if (currentStream) {
+        currentStream.getTracks().forEach((t) => t.stop());
+      }
     };
   }, []);
 
@@ -80,31 +91,31 @@ export default function Home() {
   }, []);
 
   const handleInstall = () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    installPrompt.userChoice?.then((choice) => {
-      if (choice?.outcome === "accepted") {
-        setInstallPrompt(null);
-        setIsInstalled(true);
-      }
-    });
+    if (installPrompt) {
+      installPrompt.prompt();
+      installPrompt.userChoice.then((choice) => {
+        if (choice.outcome === "accepted") {
+          setInstallPrompt(null);
+          setIsInstalled(true);
+        }
+      });
+    }
   };
 
   // capture one frame from the video as JPEG dataURL
   const captureImage = () => {
-    const video = videoRef.current;
-    if (!video) return "";
     const canvas = document.createElement("canvas");
+    const video = videoRef.current;
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return "";
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.9);
   };
 
-  // Main attendance handler — send image to server which will verify
+  // Main attendance handler — send image to server which will verify (Rekognition / matching)
   const handleAttendance = async () => {
+    // prevent overlapping runs
     if (runningDetection.current) {
       console.warn("⚠️ Detection already running — skipping");
       return;
@@ -118,8 +129,11 @@ export default function Home() {
         return;
       }
 
+      console.log("▶️ Capturing image for verification...");
+
       const imageData = captureImage();
 
+      console.log("📤 Sending image to backend for verification...");
       const res = await fetch("/api/verify-face", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,6 +141,7 @@ export default function Home() {
       });
 
       const result = await res.json();
+      console.log("💻 Verification result from server:", result);
 
       const serverDistance =
         typeof result?.distance === "number"
@@ -135,31 +150,40 @@ export default function Home() {
           ? result.matchDistance
           : null;
 
+      console.log("📏 Server distance:", serverDistance);
+
+      // You can tune this threshold according to what your server returns.
+      // If your server uses Rekognition similarity (0-100) you may need to convert/adjust.
       const distanceOk = serverDistance === null ? true : serverDistance < 0.45;
 
       if (result.success && result.user && distanceOk) {
         const { name, role, userId, imageUrl } = result.user;
+        console.log("🎯 Match confirmed:", { name, role, userId });
 
+        // Save uid locally
         try {
           localStorage.setItem("uid", userId);
-        } catch {}
+        } catch (e) {
+          /* ignore localStorage errors */
+        }
 
-        // Fire-and-forget
+        // Optional: notify Telegram (fire-and-forget)
         fetch("/api/send-telegram", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, role, userId, imageData }),
         }).catch(() => {});
 
-        // ✅ Save image to sessionStorage (avoid 414 Request-URI Too Large)
-        sessionStorage.setItem("capturedImage", imageData);
-
+        // Redirect to Success page (this page now only shows preview/details; it will not auto-submit attendance)
         const url = `/success?name=${encodeURIComponent(
           name
         )}&role=${encodeURIComponent(role)}&userId=${encodeURIComponent(
           userId
-        )}&image=${encodeURIComponent(imageUrl || "")}`;
+        )}&image=${encodeURIComponent(
+          imageUrl || ""
+        )}&imageData=${encodeURIComponent(imageData)}`;
 
+        console.log("➡️ Redirecting to:", url);
         router.push(url);
       } else {
         console.warn("⚠️ User not recognized or distance too high", {
@@ -174,25 +198,26 @@ export default function Home() {
     } finally {
       setLoading(false);
       runningDetection.current = false;
+      console.log("🔄 Detection cycle completed");
     }
   };
 
-  // Optional: auto-run attendance every N ms — disabled by default
+  // Optional: auto-run attendance every N ms — disabled by default to avoid frequent server calls.
   useEffect(() => {
-    const enableAutoDetect = false;
+    const enableAutoDetect = false; // set to true if you want periodic auto-checks
     const intervalMs = 2500;
     if (!enableAutoDetect) return;
 
-    if (detectTimerRef.current) clearInterval(detectTimerRef.current);
+    if (detectTimer.current) clearInterval(detectTimer.current);
 
-    detectTimerRef.current = setInterval(() => {
+    detectTimer.current = setInterval(() => {
       if (!loading && !showPopup && document.visibilityState === "visible") {
         handleAttendance();
       }
     }, intervalMs);
 
     return () => {
-      if (detectTimerRef.current) clearInterval(detectTimerRef.current);
+      if (detectTimer.current) clearInterval(detectTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, showPopup]);
