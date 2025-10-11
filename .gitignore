@@ -45,6 +45,7 @@ capacitor.config.json
 capacitor.config.ts
 capacitor.config.*.json
 capacitor.config.*.ts
+createAdmin.js
 
 # Gradle / Android build cache
 .gradle/
