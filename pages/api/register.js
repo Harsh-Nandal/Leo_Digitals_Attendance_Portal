@@ -3,37 +3,63 @@ import connectDB from "../../lib/mongodb";
 import User from "../../models/User";
 import { v2 as cloudinary } from "cloudinary";
 import axios from "axios";
+import sharp from "sharp";
 import {
   RekognitionClient,
-  IndexFacesCommand
+  IndexFacesCommand,
 } from "@aws-sdk/client-rekognition";
 
-// Cloudinary configuration
+// --- Cloudinary Config ---
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Rekognition config
+// --- Rekognition Config ---
 const REGION = process.env.AWS_REGION || "ap-south-1";
 const REK_COLLECTION =
-  process.env.REKOGNITION_COLLECTION || process.env.REKOG_COLLECTION || "students-collection";
+  process.env.REKOGNITION_COLLECTION || "students-collection";
 const rekClient = new RekognitionClient({ region: REGION });
 
-/**
- * Register endpoint:
- * - Body: { name, userId, role, imageData (dataURL) }
- * - Uploads image to Cloudinary
- * - Creates user document
- * - Indexes face into Rekognition (retries up to 3 times)
- * - Updates user.rekognition with indexing results (or returns rekognitionError)
- */
+// ---------- HELPER: Get clarity score ----------
+async function getClarityScore(imageBuffer) {
+  const { data } = await sharp(imageBuffer).greyscale().raw().toBuffer({ resolveWithObject: true });
+  let sum = 0, sumSq = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i];
+    sumSq += data[i] * data[i];
+  }
+  const mean = sum / data.length;
+  const variance = sumSq / data.length - mean * mean;
+  return variance;
+}
 
+// ---------- HELPER: Pick clearest image ----------
+async function pickClearestImage(imageArray) {
+  const results = [];
+
+  for (const img of imageArray) {
+    try {
+      const buffer = Buffer.from(img.replace(/^data:image\/\w+;base64,/, ""), "base64");
+      const clarity = await getClarityScore(buffer);
+      results.push({ clarity, imageData: img });
+    } catch (err) {
+      console.warn("❌ Image clarity check failed:", err.message);
+    }
+  }
+
+  if (!results.length) throw new Error("No valid images received.");
+
+  results.sort((a, b) => b.clarity - a.clarity);
+  const best = results[0];
+  console.log(`📸 Clearest image clarity: ${best.clarity}`);
+  return best.imageData;
+}
+
+// ---------- HELPER: Index face with retries ----------
 async function indexFaceWithRetries(buffer, userId, maxAttempts = 3) {
-  let attempt = 0;
-  let lastErr = null;
-
+  let attempt = 0, lastErr = null;
   while (attempt < maxAttempts) {
     try {
       const cmd = new IndexFacesCommand({
@@ -43,174 +69,133 @@ async function indexFaceWithRetries(buffer, userId, maxAttempts = 3) {
         DetectionAttributes: [],
         MaxFaces: 1,
       });
-
       const out = await rekClient.send(cmd);
       return { success: true, out };
     } catch (err) {
       lastErr = err;
-      // If collection not found, don't retry — return immediately
-      if (err?.name === "ResourceNotFoundException" || (err?.message && err.message.includes("Collection"))) {
-        return { success: false, fatal: true, error: err };
-      }
-      attempt += 1;
-      // simple backoff
-      await new Promise((r) => setTimeout(r, 500 * attempt));
+      attempt++;
+      console.warn(`⚠️ Rekognition attempt ${attempt} failed:`, err.message);
+      await new Promise(r => setTimeout(r, 400 * attempt));
     }
   }
-
-  return { success: false, fatal: false, error: lastErr };
+  return { success: false, error: lastErr };
 }
 
+// ---------- API Handler ----------
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
+  if (req.method !== "POST")
     return res.status(405).json({ message: "Method Not Allowed" });
-  }
 
   let body = req.body;
-
-  // Accept raw JSON string as well as parsed body
   if (!body || typeof body === "string") {
     try {
       body = JSON.parse(body);
-    } catch (err) {
-      console.error("❌ Invalid JSON body");
+    } catch {
       return res.status(400).json({ message: "Invalid request body format." });
     }
   }
 
   const { name, userId, role, imageData } = body;
 
-  console.log("🔎 Received register request:", {
-    name,
-    userId,
-    role,
-    imageLength: imageData?.length ?? null,
-  });
-
-  // Basic validation
   if (
-    typeof name !== "string" ||
-    typeof userId !== "string" ||
-    typeof role !== "string" ||
-    typeof imageData !== "string"
-  ) {
-    console.warn("❌ Validation failed. Missing required fields.");
-    return res.status(400).json({
-      message: "Backend :: Missing or invalid data. Please register again.",
-    });
-  }
+    !name ||
+    !userId ||
+    !role ||
+    (!Array.isArray(imageData) && typeof imageData !== "string")
+  )
+    return res.status(400).json({ message: "Missing or invalid fields." });
 
   try {
     await connectDB();
 
-    // Prevent duplicate userId
-    const existingUser = await User.findOne({ userId });
-    if (existingUser) {
+    const existing = await User.findOne({ userId });
+    if (existing)
       return res.status(409).json({ message: "User ID already exists." });
-    }
 
-    // Upload image to Cloudinary
-    const uploadResponse = await cloudinary.uploader.upload(imageData, {
-      folder: "mdci-faces",
-      // you can add transformations here if desired
+    // 🔥 Pick clearest image if multiple were captured
+    const selectedImage = Array.isArray(imageData)
+      ? await pickClearestImage(imageData)
+      : imageData;
+
+    // Upload all captured images to Cloudinary (for record)
+    const uploadAll = await Promise.allSettled(
+      (Array.isArray(imageData) ? imageData : [imageData]).map(img =>
+        cloudinary.uploader.upload(img, { folder: "mdci-faces/raw" })
+      )
+    );
+
+    const allUploadedUrls = uploadAll
+      .filter(u => u.status === "fulfilled")
+      .map(u => u.value.secure_url);
+
+    // Upload clearest image in main folder
+    const mainUpload = await cloudinary.uploader.upload(selectedImage, {
+      folder: "mdci-faces/main",
     });
 
-    const imageUrl = uploadResponse.secure_url;
-    console.log("✅ Cloudinary upload success:", imageUrl);
+    const imageUrl = mainUpload.secure_url;
 
-    // Create user document (rekognition will be filled after indexing)
-    const newUserData = {
+    console.log("✅ Cloudinary uploads complete:", {
+      main: imageUrl,
+      total: allUploadedUrls.length,
+    });
+
+    // Save to DB
+    const newUser = await User.create({
       name,
       userId,
       role,
       imageUrl,
-    };
+      allImages: allUploadedUrls,
+    });
 
-    const newUser = await User.create(newUserData);
-    console.log("✅ User created (DB):", newUser._id);
+    // Download for Rekognition
+    const resp = await axios.get(imageUrl, { responseType: "arraybuffer" });
+    const buffer = Buffer.from(resp.data);
 
-    // Download the uploaded image into buffer for Rekognition
-    try {
-      const resp = await axios.get(imageUrl, {
-        responseType: "arraybuffer",
-        timeout: 20000,
-      });
-      const buffer = Buffer.from(resp.data);
+    const rekResult = await indexFaceWithRetries(buffer, userId, 3);
 
-      // Index into Rekognition with retries
-      const idxResult = await indexFaceWithRetries(buffer, userId, 3);
-
-      if (!idxResult.success) {
-        // fatal error (e.g., collection missing)
-        if (idxResult.fatal) {
-          console.error("❌ Rekognition fatal error:", idxResult.error);
-          const createdUser = await User.findById(newUser._id).lean();
-          return res.status(200).json({
-            message: "User created but Rekognition indexing failed",
-            user: createdUser,
-            rekognitionError:
-              `Rekognition collection '${REK_COLLECTION}' not found. Create it via /api/create-collection or AWS console. ` +
-              `AWS message: ${idxResult.error?.message ?? String(idxResult.error)}`,
-          });
-        }
-
-        // non-fatal after retries
-        console.error("❌ Rekognition indexing failed after retries:", idxResult.error);
-        const createdUser = await User.findById(newUser._id).lean();
-        return res.status(200).json({
-          message: "User created but Rekognition indexing failed after retries",
-          user: createdUser,
-          rekognitionError: idxResult.error?.message || String(idxResult.error),
-        });
-      }
-
-      // Success: parse IndexFaces output
-      const out = idxResult.out;
-      const faceRecords = out.FaceRecords || [];
-      const faceIds = faceRecords.map((r) => r.Face && r.Face.FaceId).filter(Boolean);
-
-      // Prepare rekognition update object
-      const rekUpdate = {
-        "rekognition.externalImageId": String(userId),
-        "rekognition.faceIds": faceIds,
-        "rekognition.lastIndexedAt": new Date(),
-        "rekognition.indexResponse": out, // store raw response (schema allows Mixed)
-      };
-
-      await User.updateOne({ _id: newUser._id }, { $set: rekUpdate });
-
-      const updatedUser = await User.findById(newUser._id).lean();
-
-      console.log("✅ Indexed face for user:", userId, "faceIds:", faceIds);
-
+    if (!rekResult.success) {
+      console.warn("⚠️ Rekognition failed:", rekResult.error?.message);
       return res.status(200).json({
-        message: "Success",
-        user: updatedUser,
-        rekognition: { faceIds, raw: out },
-      });
-    } catch (downloadErr) {
-      console.error("❌ Error downloading image for Rekognition:", downloadErr);
-      const createdUser = await User.findById(newUser._id).lean();
-      return res.status(200).json({
-        message: "User created but Rekognition indexing failed (image download error)",
-        user: createdUser,
-        rekognitionError: downloadErr?.message || String(downloadErr),
+        message: "User created but Rekognition indexing failed.",
+        user: newUser,
       });
     }
-  } catch (error) {
-    console.error("❌ Server Error:", error);
-    return res.status(500).json({
-      message: "Internal Server Error",
-      error: error.message,
+
+    const out = rekResult.out;
+    const faceIds =
+      out?.FaceRecords?.map(r => r.Face?.FaceId).filter(Boolean) || [];
+
+    await User.updateOne(
+      { _id: newUser._id },
+      {
+        $set: {
+          "rekognition.faceIds": faceIds,
+          "rekognition.lastIndexedAt": new Date(),
+        },
+      }
+    );
+
+    const updatedUser = await User.findById(newUser._id).lean();
+    console.log(`✅ Indexed face for ${userId} (${faceIds.length} face(s))`);
+
+    return res.status(200).json({
+      message: "User registered successfully.",
+      user: updatedUser,
+      rekognition: { faceIds },
     });
+  } catch (err) {
+    console.error("❌ Server error:", err);
+    return res.status(500).json({ message: "Server Error", error: err.message });
   }
 }
 
-// Allow large payloads (images)
+// --- Increased body limit for image arrays ---
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: "12mb",
+      sizeLimit: "30mb",
     },
   },
 };
