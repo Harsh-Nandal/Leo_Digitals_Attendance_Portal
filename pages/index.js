@@ -4,6 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+export async function getServerSideProps() {
+  if (!global.__attendanceCronStarted) {
+    global.__attendanceCronStarted = true;
+    console.log("⏰ Starting attendance cron...");
+
+    // Dynamically import cron only on the server
+    const { startAttendanceCron } = await import("../lib/attendanceNotifier.js");
+    startAttendanceCron();
+  }
+
+  return {
+    props: {
+      message: "✅ Attendance cron initialized on server start.",
+    },
+  };
+}
+
 export default function Home() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -20,7 +37,9 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
         if (stream) stream.getTracks().forEach((t) => t.stop());
         console.log("✅ Camera permission granted");
       } catch (err) {
@@ -129,13 +148,11 @@ export default function Home() {
         }).catch(() => {});
 
         router.push(
-          `/success?name=${encodeURIComponent(
-            name
-          )}&role=${encodeURIComponent(role)}&userId=${encodeURIComponent(
-            userId
-          )}&image=${encodeURIComponent(imageUrl || "")}&imageData=${encodeURIComponent(
-            imageData
-          )}`
+          `/success?name=${encodeURIComponent(name)}&role=${encodeURIComponent(
+            role
+          )}&userId=${encodeURIComponent(userId)}&image=${encodeURIComponent(
+            imageUrl || ""
+          )}&imageData=${encodeURIComponent(imageData)}`
         );
       } else {
         console.warn("Not recognized:", result);
@@ -166,7 +183,10 @@ export default function Home() {
     }
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt
+      );
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);

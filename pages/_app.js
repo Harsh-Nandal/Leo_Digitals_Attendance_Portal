@@ -10,6 +10,13 @@ export default function MyApp({ Component, pageProps }) {
   const [appReady, setAppReady] = useState(false);
 
   useEffect(() => {
+    // ✅ Minimum splash time (in milliseconds)
+    const MIN_SPLASH_TIME = 750;
+
+    const timer = setTimeout(() => {
+      setAppReady(true);
+    }, MIN_SPLASH_TIME);
+
     // ✅ Detect WebView (Capacitor, Android WebView)
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const inWebView =
@@ -19,9 +26,7 @@ export default function MyApp({ Component, pageProps }) {
       (async () => {
         try {
           const regs = await navigator.serviceWorker.getRegistrations();
-          for (const r of regs) {
-            await r.unregister();
-          }
+          for (const r of regs) await r.unregister();
           console.log("ServiceWorkers unregistered (WebView)");
         } catch (err) {
           console.warn("Failed to unregister SW in WebView", err);
@@ -39,6 +44,8 @@ export default function MyApp({ Component, pageProps }) {
         }
       })();
     }
+
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -51,7 +58,7 @@ export default function MyApp({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="Attendance Portal" />
 
-        {/* ✅ Icons — make sure these exact files exist in /public/icons */}
+        {/* ✅ Icons */}
         <link
           rel="icon"
           href="/icons/small-logo-Image.jpg"
@@ -68,7 +75,7 @@ export default function MyApp({ Component, pageProps }) {
         {/* ✅ Preload splash image */}
         <link rel="preload" as="image" href="/largeLogoImage.jpg" type="image/jpeg" />
 
-        {/* ✅ Tailwind CDN (if needed in addition to local styles) */}
+        {/* ✅ Tailwind CDN (if needed) */}
         <script src="https://cdn.tailwindcss.com"></script>
         <script
           dangerouslySetInnerHTML={{
@@ -87,14 +94,13 @@ export default function MyApp({ Component, pageProps }) {
         />
       </Head>
 
-      {/* ✅ Splash screen until app is ready */}
-      {!appReady && <SplashScreen onFinish={() => setAppReady(true)} />}
+      {/* ✅ Splash screen for minimum 0.5s */}
+      {!appReady && <SplashScreen />}
 
-      {/* ✅ Main app content */}
+      {/* ✅ Main content after splash */}
       <div style={{ visibility: appReady ? "visible" : "hidden" }}>
         <Component {...pageProps} />
       </div>
     </>
   );
 }
-

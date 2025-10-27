@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import useDisablePullToRefresh from "../hooks/useDisablePullToRefresh";
+
 
 export default function SuccessPage() {
   const [userId, setUserId] = useState("");
@@ -16,6 +18,8 @@ export default function SuccessPage() {
 
   const router = useRouter();
   const alreadySubmittedRef = useRef(false);
+    useDisablePullToRefresh(true); // disable pull-to-refresh only here
+
 
   const safeParseJson = async (resp) => {
     try {

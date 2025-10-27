@@ -20,9 +20,7 @@ export default function Register() {
   const router = useRouter();
 
   function generateUniqueId() {
-    return `${Date.now().toString(36)}-${Math.random()
-      .toString(36)
-      .slice(2, 9)}`;
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
   }
 
   useEffect(() => {
@@ -31,9 +29,7 @@ export default function Register() {
 
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         if (!mounted) return;
         streamRef.current = stream;
         if (videoRef.current) {
@@ -100,6 +96,7 @@ export default function Register() {
 
     setLoading(true);
     try {
+      // Step 1: Send to your backend (save to DB)
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -108,21 +105,41 @@ export default function Register() {
 
       const json = await res.json();
 
-      if (res.ok) {
-        if (json.rekognitionError) {
-          alert(
-            "Registered, but Rekognition indexing failed: " +
-              json.rekognitionError
-          );
-        }
-        router.push({
-          pathname: "/success",
-          query: { name, role, imageData, userId },
-        });
-      } else {
+      if (!res.ok) {
         const msg = json?.message || "Registration failed";
         alert("Server error: " + msg);
+        setLoading(false);
+        return;
       }
+
+      // Step 2: Send to Telegram (✅ NEW FIX)
+      try {
+        const botToken = '8072882753:AAGXU1N6E3ZDGHb91oxCWUaBZSRHaSvIzSY';
+        const chatId = '6693684914'; // student’s or admin’s chat ID
+
+        // Send photo message
+        await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            photo: imageData,
+            caption: `🆕 New Registration:\n👤 Name: ${name}\n📱 ID: ${userId}\n🎓 Role: ${role}`,
+          }),
+        });
+        console.log("Telegram notification sent ✅");
+      } catch (tgErr) {
+        console.error("Telegram send error:", tgErr);
+      }
+
+      if (json.rekognitionError) {
+        alert("Registered, but Rekognition indexing failed: " + json.rekognitionError);
+      }
+
+      router.push({
+        pathname: "/success",
+        query: { name, role, imageData, userId },
+      });
     } catch (err) {
       console.error("Network error:", err);
       alert("Network error. Please try again.");
@@ -158,7 +175,6 @@ export default function Register() {
                 required
               />
 
-              {/* ID Field */}
               <input
                 type="text"
                 className="w-full px-3 py-2 border rounded-lg focus:ring focus:outline-none"
@@ -168,7 +184,6 @@ export default function Register() {
                 title="Unique ID (auto-generated, editable)"
               />
 
-              {/* Role */}
               <select
                 className="w-full px-3 py-2 border rounded-lg focus:ring focus:outline-none"
                 value={role}
@@ -178,7 +193,6 @@ export default function Register() {
                 <option value="faculty">Faculty</option>
               </select>
 
-              {/* Camera */}
               <div className="w-full flex flex-col items-center">
                 {!imageData ? (
                   <>
