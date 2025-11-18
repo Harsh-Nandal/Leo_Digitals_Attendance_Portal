@@ -10,7 +10,9 @@ export async function getServerSideProps() {
     console.log("⏰ Starting attendance cron...");
 
     // Dynamically import cron only on the server
-    const { startAttendanceCron } = await import("../lib/attendanceNotifier.js");
+    const { startAttendanceCron } = await import(
+      "../lib/attendanceNotifier.js"
+    );
     startAttendanceCron();
   }
 
@@ -207,31 +209,41 @@ export default function Home() {
     <main className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-200 p-6 text-center relative">
       {/* Popup */}
       {showPopup && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-lg w-80 relative">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50 animate-fadeIn">
+          <div className="bg-white/90 backdrop-blur-xl p-7 rounded-3xl shadow-2xl w-80 relative border border-gray-200 animate-slideUp">
+            {/* Close Button */}
             <button
               onClick={handleClose}
-              className="absolute top-2 right-2 text-gray-500 hover:text-red-500 text-lg"
+              className="absolute top-3 right-3 text-gray-500 hover:text-red-500 transition text-xl"
             >
               ✕
             </button>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Welcome!</h2>
-            <p className="text-gray-600 mb-4">
-              Not recognized with high confidence. <br />
-              Please choose your option:
+
+            {/* Title */}
+            <h2 className="text-2xl font-bold text-gray-800 text-center mb-2">
+              Welcome!
+            </h2>
+
+            {/* Message */}
+            <p className="text-gray-600 text-center leading-relaxed mb-6">
+              Not recognized with high confidence.
+              <br />
+              Please choose an option:
             </p>
+
+            {/* Buttons */}
             <div className="flex gap-3">
               <Link href="/newStudent" className="flex-1">
-                <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+                <button className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium hover:bg-blue-700 transition shadow-sm">
                   New Student
                 </button>
               </Link>
-              <button
-                onClick={handleClose}
-                className="flex-1 bg-gray-300 py-2 rounded-lg hover:bg-gray-400 transition"
-              >
-                Already Registered
-              </button>
+
+              <Link href="/punchPage" className="flex-1">
+                <button className="w-full bg-gray-200 text-gray-800 py-2.5 rounded-xl font-medium hover:bg-gray-300 transition shadow-sm">
+                  Registered
+                </button>
+              </Link>
             </div>
           </div>
         </div>

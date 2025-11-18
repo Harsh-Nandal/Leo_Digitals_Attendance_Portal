@@ -1,228 +1,141 @@
-// client-side helper for printing and pdf generation
-// Install: npm i jspdf jspdf-autotable
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import PDFDocument from "pdfkit";
+import path from "path";
+import fs from "fs";
 
-/** sanitize filename */
-const sanitizeFilename = (name = "Attendance") =>
-  name.replace(/[\/\\?%*:|"<>]/g, "_");
+/**
+ * Generates Attendance PDF for a student filtered by month or week
+ */
+export async function generatePDF(attendanceRecords = [], userId, student = {}, filterType = "monthly", month = null) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!attendanceRecords.length) {
+        throw new Error("No attendance records found for this period.");
+      }
 
-/** build a styled header like the marksheet */
-function drawPdfHeader(doc, pageWidth, margin, title, student) {
-  const name = student?.name || "";
-  const role = student?.role || "";
+      // 🔹 Filter attendance based on month or week
+      let filteredRecords = attendanceRecords;
 
-  // Logo
-  const logoPath = "/DesinerzAcademyDark.png"; // must be in /public
+      if (filterType === "monthly" && month) {
+        const monthIndex = new Date(`${month} 1, 2025`).getMonth();
+        filteredRecords = attendanceRecords.filter((rec) => {
+          const recDate = new Date(rec.date);
+          return recDate.getMonth() === monthIndex;
+        });
+      } else if (filterType === "weekly") {
+        const now = new Date();
+        const weekStart = new Date(now.setDate(now.getDate() - now.getDay())); // Sunday
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        filteredRecords = attendanceRecords.filter((rec) => {
+          const recDate = new Date(rec.date);
+          return recDate >= weekStart && recDate <= weekEnd;
+        });
+      }
 
-  doc.addImage(logoPath, "PNG", pageWidth / 2 - 30, 20, 60, 60);
+      const doc = new PDFDocument({ margin: 40, size: "A4" });
+      const chunks = [];
+      doc.on("data", (chunk) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
 
-  // Institute Title
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(204, 0, 0);
-  doc.setFontSize(16);
-  doc.text("MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE", pageWidth / 2, 100, {
-    align: "center",
+      const pageWidth = doc.page.width;
+      const marginLeft = 50;
+      const marginRight = 50;
+      const centerX = pageWidth / 2;
+
+      /** === HEADER === */
+      const drawHeader = () => {
+        const logoPath = path.join(process.cwd(), "public", "DesinerzAcademyDark.png");
+        if (fs.existsSync(logoPath)) {
+          doc.image(logoPath, centerX - 70, 30, { width: 140 });
+        }
+
+        doc.moveDown(5);
+        doc.font("Helvetica-Bold").fontSize(16).fillColor("#cc0000").text("MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE", { align: "center" });
+
+        doc.moveDown(0.3);
+        doc.font("Helvetica").fontSize(10).fillColor("#212529").text(
+          "Under the Management of Maharishi Dayanand College regd. by Govt of Haryana",
+          { align: "center" }
+        );
+
+        const bannerY = doc.y + 10;
+        doc.rect(0, bannerY, pageWidth, 20).fill("#003399");
+        doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(10).text("ISO CERTIFIED 9001-2015 CERTIFIED", centerX, bannerY + 6, { align: "center" });
+        doc.fillColor("#000000");
+
+        doc.moveDown(2);
+        doc.font("Helvetica-Bold").fontSize(14).fillColor("#000000").text(`ATTENDANCE REPORT (${filterType === "weekly" ? "Weekly" : month ? month.toUpperCase() : "All"}) - 2025`, {
+          align: "center",
+        });
+
+        const name = student?.name || "—";
+        const role = student?.role || "—";
+        const generated = new Date().toLocaleString();
+
+        const infoY = doc.y + 10;
+        doc.font("Helvetica").fontSize(11).fillColor("#000000");
+        doc.text(`Name: ${name}`, marginLeft, infoY);
+        doc.text(`Role: ${role}`, pageWidth - marginRight - 120, infoY);
+        doc.text(`Generated: ${generated}`, marginLeft, infoY + 15);
+
+        doc.moveDown(0.5);
+        doc.strokeColor("#cccccc").moveTo(marginLeft, doc.y + 5).lineTo(pageWidth - marginRight, doc.y + 5).stroke();
+      };
+
+      /** === FOOTER === */
+      const drawFooter = () => {
+        const footerY = doc.page.height - 50;
+        doc.strokeColor("#e5e7eb").moveTo(marginLeft, footerY - 10).lineTo(pageWidth - marginRight, footerY - 10).stroke();
+        doc.font("Helvetica-Oblique").fontSize(9).fillColor("#6b7280")
+          .text("Powered by Desinerz Academy", marginLeft, footerY)
+          .text(`Page ${doc.page.number}`, pageWidth - marginRight, footerY, { align: "right" });
+      };
+
+      /** === TABLE HEADER === */
+      const drawTableHeader = (startY) => {
+        const colX = [70, 240, 410];
+        const rowHeight = 22;
+        doc.rect(colX[0] - 20, startY - 6, pageWidth - 100, rowHeight).fill("#003399");
+        doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(11);
+        doc.text("Date", colX[0], startY);
+        doc.text("Punch In", colX[1], startY);
+        doc.text("Punch Out", colX[2], startY);
+        doc.fillColor("#000000");
+        return startY + rowHeight;
+      };
+
+      /** === MAIN CONTENT === */
+      drawHeader();
+      let y = drawTableHeader(doc.y + 25);
+      const rowHeight = 22;
+      const colX = [70, 240, 410];
+      const pageHeight = doc.page.height;
+      const bottomMargin = 70;
+
+      filteredRecords.forEach((rec, i) => {
+        if (y + rowHeight > pageHeight - bottomMargin) {
+          drawFooter();
+          doc.addPage();
+          drawHeader();
+          y = drawTableHeader(doc.y + 25);
+        }
+
+        if (i % 2 === 0) {
+          doc.rect(50, y - 6, pageWidth - 100, rowHeight).fill("#f5f7ff");
+        }
+
+        doc.fillColor("#000000").font("Helvetica").fontSize(10);
+        doc.text(rec.date || "—", colX[0], y);
+        doc.text(rec.punchIn || "—", colX[1], y);
+        doc.text(rec.punchOut || "—", colX[2], y);
+        y += rowHeight;
+        doc.fillColor("#000000");
+      });
+
+      drawFooter();
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
   });
-
-  // Subtitle
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(33, 37, 41);
-  doc.setFontSize(10);
-  doc.text(
-    "Under the Management of Maharishi Dayanand College regd. by Govt of Haryana",
-    pageWidth / 2,
-    115,
-    { align: "center" }
-  );
-
-  // ISO Banner
-  doc.setFillColor(0, 51, 153);
-  doc.rect(0, 125, pageWidth, 20, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text("ISO CERTIFIED 9001-2015 CERTIFIED", pageWidth / 2, 138, {
-    align: "center",
-  });
-
-  // Report title
-  doc.setTextColor(0, 0, 0);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text(`${title} REPORT - 2025`, pageWidth / 2, 165, { align: "center" });
-
-  // Student name
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.text(`Name: ${name}`, margin.left, 185);
-  if (role) doc.text(`Role: ${role}`, pageWidth - margin.right - 100, 185);
-
-  // Line
-  doc.setDrawColor(200);
-  doc.line(margin.left, 192, pageWidth - margin.right, 192);
-}
-
-/** build footer like marksheet */
-function drawPdfFooter(doc, pageWidth, margin, pageNumber) {
-  const pageCount = doc.internal.getNumberOfPages();
-  const footerY = doc.internal.pageSize.getHeight() - 35;
-
-  doc.setDrawColor(240);
-  doc.setLineWidth(0.4);
-  doc.line(margin.left, footerY - 8, pageWidth - margin.right, footerY - 8);
-
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text("Powered by Desinerz Academy", margin.left, footerY);
-  doc.text(`Page ${pageNumber} of ${pageCount}`, pageWidth - margin.right, footerY, {
-    align: "right",
-  });
-}
-
-/** download PDF of records styled like marksheet */
-export function downloadPDF(tableTitle = "Attendance", tableRecords = [], student = {}) {
-  if (!tableRecords || tableRecords.length === 0) return;
-
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = { top: 200, left: 40, right: 40, bottom: 60 };
-
-  const head = [["Date", "Punch In", "Punch Out"]];
-  const body = tableRecords.map((r) => [r.date, r.punchIn ?? "—", r.punchOut ?? "—"]);
-
-  autoTable(doc, {
-    head,
-    body,
-    startY: margin.top,
-    margin: { left: margin.left, right: margin.right, bottom: margin.bottom },
-    styles: {
-      font: "helvetica",
-      fontSize: 10,
-      cellPadding: 6,
-      overflow: "linebreak",
-      valign: "middle",
-    },
-    headStyles: {
-      fillColor: [0, 51, 153],
-      textColor: 255,
-      fontStyle: "bold",
-    },
-    alternateRowStyles: { fillColor: [245, 247, 255] },
-    tableLineColor: [230, 230, 230],
-    tableLineWidth: 0.3,
-    columnStyles: {
-      0: { cellWidth: 140 },
-      1: { cellWidth: 160 },
-      2: { cellWidth: 160 },
-    },
-    didDrawPage: function () {
-      const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
-      drawPdfHeader(doc, pageWidth, margin, tableTitle, student);
-      drawPdfFooter(doc, pageWidth, margin, pageNumber);
-    },
-  });
-
-  const safe = sanitizeFilename(tableTitle || "Attendance");
-  doc.save(`${safe}.pdf`);
-}
-
-/** escape HTML */
-function escapeHtml(str = "") {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/** build styled print HTML like the marksheet */
-function buildPrintHtml(title, rowsHtml, student) {
-  const now = new Date();
-  const generatedAt = now.toLocaleString();
-  const name = student?.name || "";
-  const role = student?.role || "";
-  const logoUrl = "/DesinerzAcademyDark.png";
-
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>${title}</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<style>
-@page { margin: 36pt; }
-html, body { font-family: "Poppins", Arial, sans-serif; background:#fff; color:#111827; margin:0; padding:0; }
-.print-wrapper { padding:20pt; max-width:850px; margin:auto; border:1px solid #e5e7eb; }
-.header { text-align:center; }
-.logo { width:90px; height:auto; margin-bottom:10px; }
-.institute { font-size:18px; font-weight:700; color:#cc0000; }
-.sub-title { font-size:12px; color:#1e293b; margin-top:2px; }
-.iso-banner { background:#003399; color:#fff; font-size:11px; font-weight:600; padding:4px 0; margin-top:6px; border-radius:2px; }
-.report-title { font-size:14px; font-weight:700; margin-top:12px; color:#000; }
-.meta-line { font-size:12px; margin-top:8px; display:flex; justify-content:space-between; }
-table.att-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:16px; }
-table.att-table th { background:#003399; color:white; padding:8px; border:1px solid #ccc; }
-table.att-table td { padding:8px; border:1px solid #ccc; text-align:center; }
-table.att-table tr:nth-child(even) { background:#f9fafb; }
-.footer { margin-top:20px; text-align:right; font-size:11px; color:#6b7280; border-top:1px solid #e5e7eb; padding-top:6px; }
-@media print { body { -webkit-print-color-adjust: exact; } }
-</style>
-</head>
-<body>
-<div class="print-wrapper">
-  <div class="header">
-    <img src="${logoUrl}" class="logo" alt="Logo"  style="width:15rem;"/>
-    <div class="institute">MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE</div>
-    <div class="sub-title">Under the Management of Maharishi Dayanand College regd. by Govt of Haryana</div>
-    <div class="iso-banner">ISO CERTIFIED 9001-2015 CERTIFIED</div>
-    <div class="report-title">${escapeHtml(title)} REPORT - 2025</div>
-  </div>
-
-  <div class="meta-line">
-    <div><strong>Name:</strong> ${escapeHtml(name)}</div>
-    <div><strong>Role:</strong> ${escapeHtml(role)}</div>
-    <div><strong>Generated:</strong> ${escapeHtml(generatedAt)}</div>
-  </div>
-
-  <table class="att-table">
-    <thead>
-      <tr><th>Date</th><th>Punch In</th><th>Punch Out</th></tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-
-  <div class="footer">Powered by Desinerz Academy</div>
-</div>
-<script>
-window.onload = function() { setTimeout(()=>window.print(), 300); };
-</script>
-</body>
-</html>`;
-}
-
-/** print attendance styled like marksheet */
-export function printTableHtml(tableTitle = "Attendance", tableRecords = [], student = {}) {
-  if (!tableRecords || tableRecords.length === 0) return;
-
-  const rowsHtml = tableRecords
-    .map(
-      (r) =>
-        `<tr>
-          <td>${escapeHtml(r.date ?? "")}</td>
-          <td>${escapeHtml(r.punchIn ?? "—")}</td>
-          <td>${escapeHtml(r.punchOut ?? "—")}</td>
-        </tr>`
-    )
-    .join("");
-
-  const html = buildPrintHtml(tableTitle, rowsHtml, student);
-  const printWindow = window.open("", "_blank", "width=900,height=700");
-  if (printWindow) {
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-  }
 }

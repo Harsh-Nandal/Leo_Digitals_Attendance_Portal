@@ -37,17 +37,17 @@ export default function AdminSidebar({ setView, setShowAbsent }) {
         </Link>
 
         {/* Absent Today button: only visible on /admin/dashboard */}
-        {pathname === "/admin/dashboard" && (
-          <button
-            onClick={() => setShowAbsent(true)}
+        
+          <Link
+            href={"/admin/attendance/absent"}
             className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
                        bg-gradient-to-r from-red-500 to-red-600 
                        hover:from-red-400 hover:to-red-500 
                        transition text-white font-medium shadow-md"
           >
             <FaUserTimes /> Absent Today
-          </button>
-        )}
+          </Link>
+        
 
         {/* Records link */}
         <Link
@@ -58,6 +58,15 @@ export default function AdminSidebar({ setView, setShowAbsent }) {
                      transition text-white font-medium shadow-md"
         >
           <FaUserTimes /> Records
+        </Link>
+        <Link
+          href={"/admin/students"}
+          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
+                     bg-gradient-to-r from-red-500 to-red-600 
+                     hover:from-red-400 hover:to-red-500 
+                     transition text-white font-medium shadow-md"
+        >
+          <FaUserTimes /> Students
         </Link>
       </nav>
     </aside>
