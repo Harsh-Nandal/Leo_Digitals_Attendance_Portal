@@ -18,11 +18,11 @@ export default async function handler(req, res) {
     }
 
     // Telegram Credentials
-    // const BOT_TOKEN = "8072882753:AAGXU1N6E3ZDGHb91oxCWUaBZSRHaSvIzSY"; // Move to .env for security
-    // const CHAT_ID = "6693684914"; // Your Telegram ID or group/channel ID
+    const BOT_TOKEN = "8072882753:AAGXU1N6E3ZDGHb91oxCWUaBZSRHaSvIzSY"; // Move to .env for security
+    const CHAT_ID = "6693684914"; // Your Telegram ID or group/channel ID
 
-    const BOT_TOKEN = "8430452006:AAEgmLpUCqPCLLUaK-WxWvyz5iMXPOAgef0";
-    const CHAT_ID = 6251710308;
+    // const BOT_TOKEN = "8430452006:AAEgmLpUCqPCLLUaK-WxWvyz5iMXPOAgef0";
+    // const CHAT_ID = 6251710308;
 
     const now = new Date();
     const date = now.toISOString().split("T")[0];
