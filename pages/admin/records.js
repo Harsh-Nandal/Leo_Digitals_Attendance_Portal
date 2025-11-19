@@ -15,6 +15,7 @@ export default function RecordsPage() {
     absentWeekly: [],
     absentMonthly: [],
   });
+
   const [view, setView] = useState("daily");
   const [showAbsent, setShowAbsent] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,13 +30,16 @@ export default function RecordsPage() {
 
   useEffect(() => {
     if (!authChecked) return;
+
     const fetchData = async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem("adminToken");
+
         const res = await fetch("/api/admin/attendance", {
           headers: { Authorization: `Bearer ${token}` },
         });
+
         const json = await res.json();
         setData(json);
       } catch (error) {
@@ -44,6 +48,7 @@ export default function RecordsPage() {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [authChecked]);
 
@@ -54,21 +59,60 @@ export default function RecordsPage() {
 
   if (!authChecked || loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-gray-800"></div>
+      <div className="flex justify-center items-center min-h-screen bg-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-purple-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gradient-to-br from-white via-purple-50 to-white text-gray-800">
+      
+      {/* Sidebar */}
       <AdminSidebar setView={setView} setShowAbsent={setShowAbsent} />
 
-      <div className="ml-64 flex-1 flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
+      {/* Main Section */}
+      <div className="ml-64 flex-1 flex flex-col bg-gradient-to-br from-white via-purple-50 to-white relative">
+        
+        {/* Header */}
         <AdminHeader showAbsent={"Records"} />
-        <main className="mt-16 p-6 bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen text-white">
-          <DashboardTabs view={view} setView={setView} data={data} />
-          <AttendanceTable attendanceList={attendanceList} />
+
+        {/* Main Container */}
+        <main
+          className="
+            mt-16 p-8 
+            min-h-screen 
+            text-gray-800
+            backdrop-blur-xl
+          "
+        >
+          {/* Tabs */}
+          <div
+            className="
+              mb-6 
+              bg-white 
+              border border-purple-200 
+              rounded-xl 
+              shadow-xl 
+              p-4
+            "
+          >
+            <DashboardTabs view={view} setView={setView} data={data} />
+          </div>
+
+          {/* Attendance Table */}
+          <div
+            className="
+              bg-white 
+              border border-purple-200 
+              rounded-xl 
+              shadow-xl
+              p-6
+            "
+          >
+            <AttendanceTable attendanceList={attendanceList} />
+          </div>
+
         </main>
       </div>
     </div>

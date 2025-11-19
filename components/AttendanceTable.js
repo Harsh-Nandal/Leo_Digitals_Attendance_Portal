@@ -45,8 +45,8 @@ export default function AttendanceTable({ attendanceList }) {
                           href={`/admin/student/${entry.userId}`}
                           className={`hover:underline ${
                             isAbsent
-                              ? "text-red-300 hover:text-red-200"
-                              : "text-green-300 hover:text-green-200"
+                              ? "text-red-200 hover:text-red-100" // ✅ Fixed: Brighter red for better contrast
+                              : "text-green-100 hover:text-green-50" // ✅ Fixed: Brighter green for better contrast
                           }`}
                         >
                           {entry.name || "Unknown"}
@@ -54,12 +54,12 @@ export default function AttendanceTable({ attendanceList }) {
                       </td>
 
                       {/* Role */}
-                      <td className="p-4 text-slate-300">
+                      <td className="p-4 text-gray-200"> {/* ✅ Fixed: Changed to text-gray-200 for better contrast */}
                         {entry.role || "-"}
                       </td>
 
                       {/* Date */}
-                      <td className="p-4 text-slate-300">
+                      <td className="p-4 text-gray-200"> {/* ✅ Fixed: Changed to text-gray-200 for better contrast */}
                         {entry.date
                           ? new Date(entry.date).toLocaleDateString()
                           : new Date().toLocaleDateString()}
@@ -68,15 +68,15 @@ export default function AttendanceTable({ attendanceList }) {
                       {/* Punch In / Out */}
                       {isAbsent ? (
                         <>
-                          <td className="p-4 italic text-red-300">Absent</td>
-                          <td className="p-4 italic text-red-300">Absent</td>
+                          <td className="p-4 italic text-red-200">Absent</td> {/* ✅ Fixed: Changed to text-red-200 for better contrast */}
+                          <td className="p-4 italic text-red-200">Absent</td> {/* ✅ Fixed: Changed to text-red-200 for better contrast */}
                         </>
                       ) : (
                         <>
-                          <td className="p-4 text-green-200 font-semibold">
+                          <td className="p-4 text-green-100 font-semibold"> {/* ✅ Fixed: Changed to text-green-100 for better contrast */}
                             {entry.punchIn || "-"}
                           </td>
-                          <td className="p-4 text-green-200 font-semibold">
+                          <td className="p-4 text-green-100 font-semibold"> {/* ✅ Fixed: Changed to text-green-100 for better contrast */}
                             {entry.punchOut || "-"}
                           </td>
                         </>

@@ -14,19 +14,19 @@ export default function ManageStudents() {
   const [editingUser, setEditingUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  const [deleteUserId, setDeleteUserId] = useState(null); // For delete popup
+  const [deleteUserId, setDeleteUserId] = useState(null);
   const [showDeletePopup, setShowDeletePopup] = useState(false);
 
   const router = useRouter();
 
-  // ✅ Check Admin Auth
+  // AUTH CHECK
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
     if (!token) router.replace("/admin/login");
     else setAuthChecked(true);
   }, [router]);
 
-  // ✅ Fetch Users
+  // FETCH USERS
   useEffect(() => {
     if (!authChecked) return;
     const fetchUsers = async () => {
@@ -47,13 +47,11 @@ export default function ManageStudents() {
     fetchUsers();
   }, [authChecked]);
 
-  // ✅ Open Delete Popup
   const openDeletePopup = (id) => {
     setDeleteUserId(id);
     setShowDeletePopup(true);
   };
 
-  // ✅ Delete user
   const handleDelete = async () => {
     try {
       const token = localStorage.getItem("adminToken");
@@ -69,7 +67,6 @@ export default function ManageStudents() {
     }
   };
 
-  // ✅ Update user
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
@@ -85,7 +82,8 @@ export default function ManageStudents() {
           role: editingUser.role,
         }),
       });
-      if (!res.ok) throw new Error("Failed to update user");
+      if (!res.ok) throw new Error("Failed to update");
+
       setShowModal(false);
       setUsers((prev) =>
         prev.map((u) => (u._id === editingUser._id ? editingUser : u))
@@ -97,8 +95,8 @@ export default function ManageStudents() {
 
   if (!authChecked || loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-gray-800"></div>
+      <div className="flex justify-center items-center min-h-screen bg-white">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-4 border-purple-600"></div>
       </div>
     );
   }
@@ -110,7 +108,7 @@ export default function ManageStudents() {
         <p>{error}</p>
         <button
           onClick={() => router.refresh()}
-          className="mt-6 px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition"
+          className="mt-6 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
         >
           Retry
         </button>
@@ -125,66 +123,68 @@ export default function ManageStudents() {
   );
 
   return (
-    <div className="flex min-h-screen overflow-x-hidden">
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-gray-50">
+      {/* SIDEBAR */}
       <AdminSidebar />
 
-      {/* Main Content */}
-      <div className="ml-64 flex-1 flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white overflow-x-hidden">
+      {/* MAIN CONTENT */}
+      <div className="ml-64 flex-1 bg-gray-50 min-h-screen">
         <AdminHeader showAbsent={"Manage Students"} />
 
-        <main className="mt-16 p-6 bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen text-white">
-          <h2 className="text-2xl font-bold mb-6 text-center">
-            👥 Manage Students & Faculty
-          </h2>
+        <main className="p-8 mt-10">
+          
 
-          {/* Search Bar */}
-          <div className="flex justify-center mb-6">
+          {/* SEARCH BAR */}
+          <div className="mb-6 flex justify-start mt-5">
             <input
               type="text"
-              placeholder="🔍 Search by name or role..."
+              placeholder="Search by name or role..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full max-w-md p-2 border rounded-lg text-white bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full max-w-xxl px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white"
             />
           </div>
 
-          {/* Users Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full border border-gray-700 rounded-lg overflow-hidden">
-              <thead className="bg-gray-800 text-gray-200">
+          {/* TABLE */}
+          <div className="overflow-x-auto bg-white shadow-md rounded-xl border">
+            <table className="w-full text-left text-gray-700">
+              <thead className="bg-gray-100 text-gray-600 text-sm">
                 <tr>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Role</th>
-                  <th className="px-4 py-3 text-left">User ID</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">User ID</th>
                   <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+
+              <tbody className="text-sm">
                 {filteredUsers.length > 0 ? (
                   filteredUsers.map((user) => (
                     <tr
                       key={user._id}
-                      className="border-b border-gray-700 hover:bg-gray-800 transition"
+                      className="border-t hover:bg-gray-50 transition"
                     >
                       <td className="px-4 py-3">{user.name}</td>
                       <td className="px-4 py-3 capitalize">{user.role}</td>
                       <td className="px-4 py-3">{user.userId}</td>
+
+                      {/* ACTION BUTTONS */}
                       <td className="px-4 py-3 text-center flex justify-center gap-3">
                         <button
                           onClick={() => {
                             setEditingUser(user);
                             setShowModal(true);
                           }}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white transition"
+                          className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition"
                         >
-                          ✏️ Edit
+                          Edit
                         </button>
+
                         <button
                           onClick={() => openDeletePopup(user._id)}
-                          className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-white transition"
+                          className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition"
                         >
-                          🗑 Delete
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -193,7 +193,7 @@ export default function ManageStudents() {
                   <tr>
                     <td
                       colSpan={4}
-                      className="text-center py-6 text-gray-400 italic"
+                      className="text-center py-6 text-gray-500 italic"
                     >
                       No users found.
                     </td>
@@ -205,11 +205,14 @@ export default function ManageStudents() {
         </main>
       </div>
 
-      {/* ✅ Edit Modal */}
+      {/* EDIT MODAL */}
       {showModal && editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 transition">
-          <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold mb-4">✏️ Edit User</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-xl">
+            <h3 className="text-xl font-semibold mb-4 text-gray-800">
+              Edit User
+            </h3>
+
             <form onSubmit={handleUpdate} className="space-y-4">
               <input
                 type="text"
@@ -217,33 +220,35 @@ export default function ManageStudents() {
                 onChange={(e) =>
                   setEditingUser({ ...editingUser, name: e.target.value })
                 }
-                className="w-full px-3 py-2 border rounded-lg text-white bg-gray-900"
-                placeholder="Full Name"
+                className="w-full px-4 py-2 border rounded-lg bg-gray-50"
                 required
               />
+
               <select
                 value={editingUser.role}
                 onChange={(e) =>
                   setEditingUser({ ...editingUser, role: e.target.value })
                 }
-                className="w-full px-3 py-2 border rounded-lg text-white bg-gray-900"
+                className="w-full px-4 py-2 border rounded-lg bg-gray-50"
               >
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
               </select>
-              <div className="flex justify-end gap-3 mt-4">
+
+              <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-gray-600 rounded-lg hover:bg-gray-700 transition"
+                  className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
                 >
                   Cancel
                 </button>
+
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                 >
-                  Save Changes
+                  Save
                 </button>
               </div>
             </form>
@@ -251,29 +256,30 @@ export default function ManageStudents() {
         </div>
       )}
 
-      {/* ✅ Beautiful Delete Popup */}
+      {/* DELETE POPUP */}
       {showDeletePopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50">
-          <div className="bg-gray-800 p-6 rounded-2xl shadow-2xl text-center animate-fadeIn w-full max-w-sm">
-            <h3 className="text-xl font-bold mb-3 text-red-400">
-              ⚠️ Confirm Deletion
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-sm shadow-xl text-center">
+            <h3 className="text-lg font-semibold text-red-600 mb-3">
+              Confirm Delete
             </h3>
-            <p className="text-gray-300 mb-6">
-              Are you sure you want to delete this user? This action cannot be
-              undone.
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this user?
             </p>
+
             <div className="flex justify-center gap-4">
               <button
                 onClick={() => setShowDeletePopup(false)}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition"
+                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Yes, Delete
+                Delete
               </button>
             </div>
           </div>

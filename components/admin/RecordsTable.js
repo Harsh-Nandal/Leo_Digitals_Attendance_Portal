@@ -5,12 +5,12 @@ import { downloadPDF, printTableHtml } from "../../utils/pdfUtils";
 
 export default function RecordsTable({ tableTitle, tableRecords, student }) {
   return (
-    <div className="bg-white rounded-2xl shadow p-4 mb-6">
-      <h3 className="text-lg font-semibold mb-3 text-gray-800">{tableTitle}</h3>
+    <div className="bg-slate-900/60 rounded-2xl shadow-xl border border-slate-700 p-4 mb-6"> {/* ✅ Fixed: Changed to dark background */}
+      <h3 className="text-lg font-semibold mb-3 text-green-300">{tableTitle}</h3> {/* ✅ Fixed: Changed to text-green-300 for themed accent */}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm table-auto">
-          <thead className="bg-gray-50">
+        <table className="w-full text-sm table-auto text-white"> {/* ✅ Fixed: Added text-white for visibility */}
+          <thead className="bg-slate-800"> {/* ✅ Fixed: Changed to bg-slate-800 */}
             <tr>
               <th className="p-3 text-left">Date</th>
               <th className="p-3 text-left">Punch In</th>
@@ -19,7 +19,10 @@ export default function RecordsTable({ tableTitle, tableRecords, student }) {
           </thead>
           <tbody>
             {tableRecords.map((r, idx) => (
-              <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+              <tr
+                key={idx}
+                className={idx % 2 === 0 ? "bg-slate-800/40" : "bg-slate-900/40"} // ✅ Fixed: Changed to dark alternating rows
+              >
                 <td className="p-3">{r.date}</td>
                 <td className="p-3">{r.punchIn || "—"}</td>
                 <td className="p-3">{r.punchOut || "—"}</td>

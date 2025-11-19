@@ -109,6 +109,39 @@ export default async function handler(req, res) {
       return allStudents.filter((s) => !presentIds.has(s.userId));
     };
 
+    // ✅ FIXED: Aggregate absenteesMonth by user and month, including 'month' field
+    const absenteesMonth = await Attendance.aggregate([
+      {
+        $group: {
+          _id: {
+            userId: "$userId",
+            month: {
+              $dateToString: { format: "%Y-%m", date: { $dateFromString: { dateString: "$date" } } }
+            }
+          },
+          absences: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: "users", // Assuming your Student model is in "users" collection
+          localField: "_id.userId",
+          foreignField: "userId",
+          as: "user"
+        }
+      },
+      { $unwind: "$user" },
+      {
+        $project: {
+          userId: "$_id.userId",
+          name: "$user.name",
+          role: "$user.role",
+          absences: 1,
+          month: "$_id.month" // ✅ Added month field (e.g., "2025-10")
+        }
+      }
+    ]);
+
     res.status(200).json({
       allStudents,
       daily: todayRecords.filter((r) => r.punchIn),
@@ -118,7 +151,7 @@ export default async function handler(req, res) {
       absentWeekly: getAbsentStudents(weekRecords),
       absentMonthly: getAbsentStudents(monthRecords),
       absenteesWeek: getAbsenteesSortedBetween(startOfWeek, today),
-      absenteesMonth: getAbsenteesSortedBetween(startOfMonth, today),
+      absenteesMonth, // ✅ Now includes month field for filtering
     });
   } catch (error) {
     console.error("API error:", error);

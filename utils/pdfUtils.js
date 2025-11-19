@@ -1,141 +1,279 @@
-import PDFDocument from "pdfkit";
-import path from "path";
-import fs from "fs";
+// Install: npm i jspdf jspdf-autotable
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-/**
- * Generates Attendance PDF for a student filtered by month or week
- */
-export async function generatePDF(attendanceRecords = [], userId, student = {}, filterType = "monthly", month = null) {
-  return new Promise((resolve, reject) => {
-    try {
-      if (!attendanceRecords.length) {
-        throw new Error("No attendance records found for this period.");
-      }
-
-      // 🔹 Filter attendance based on month or week
-      let filteredRecords = attendanceRecords;
-
-      if (filterType === "monthly" && month) {
-        const monthIndex = new Date(`${month} 1, 2025`).getMonth();
-        filteredRecords = attendanceRecords.filter((rec) => {
-          const recDate = new Date(rec.date);
-          return recDate.getMonth() === monthIndex;
-        });
-      } else if (filterType === "weekly") {
-        const now = new Date();
-        const weekStart = new Date(now.setDate(now.getDate() - now.getDay())); // Sunday
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        filteredRecords = attendanceRecords.filter((rec) => {
-          const recDate = new Date(rec.date);
-          return recDate >= weekStart && recDate <= weekEnd;
-        });
-      }
-
-      const doc = new PDFDocument({ margin: 40, size: "A4" });
-      const chunks = [];
-      doc.on("data", (chunk) => chunks.push(chunk));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-
-      const pageWidth = doc.page.width;
-      const marginLeft = 50;
-      const marginRight = 50;
-      const centerX = pageWidth / 2;
-
-      /** === HEADER === */
-      const drawHeader = () => {
-        const logoPath = path.join(process.cwd(), "public", "DesinerzAcademyDark.png");
-        if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, centerX - 70, 30, { width: 140 });
-        }
-
-        doc.moveDown(5);
-        doc.font("Helvetica-Bold").fontSize(16).fillColor("#cc0000").text("MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE", { align: "center" });
-
-        doc.moveDown(0.3);
-        doc.font("Helvetica").fontSize(10).fillColor("#212529").text(
-          "Under the Management of Maharishi Dayanand College regd. by Govt of Haryana",
-          { align: "center" }
-        );
-
-        const bannerY = doc.y + 10;
-        doc.rect(0, bannerY, pageWidth, 20).fill("#003399");
-        doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(10).text("ISO CERTIFIED 9001-2015 CERTIFIED", centerX, bannerY + 6, { align: "center" });
-        doc.fillColor("#000000");
-
-        doc.moveDown(2);
-        doc.font("Helvetica-Bold").fontSize(14).fillColor("#000000").text(`ATTENDANCE REPORT (${filterType === "weekly" ? "Weekly" : month ? month.toUpperCase() : "All"}) - 2025`, {
-          align: "center",
-        });
-
-        const name = student?.name || "—";
-        const role = student?.role || "—";
-        const generated = new Date().toLocaleString();
-
-        const infoY = doc.y + 10;
-        doc.font("Helvetica").fontSize(11).fillColor("#000000");
-        doc.text(`Name: ${name}`, marginLeft, infoY);
-        doc.text(`Role: ${role}`, pageWidth - marginRight - 120, infoY);
-        doc.text(`Generated: ${generated}`, marginLeft, infoY + 15);
-
-        doc.moveDown(0.5);
-        doc.strokeColor("#cccccc").moveTo(marginLeft, doc.y + 5).lineTo(pageWidth - marginRight, doc.y + 5).stroke();
-      };
-
-      /** === FOOTER === */
-      const drawFooter = () => {
-        const footerY = doc.page.height - 50;
-        doc.strokeColor("#e5e7eb").moveTo(marginLeft, footerY - 10).lineTo(pageWidth - marginRight, footerY - 10).stroke();
-        doc.font("Helvetica-Oblique").fontSize(9).fillColor("#6b7280")
-          .text("Powered by Desinerz Academy", marginLeft, footerY)
-          .text(`Page ${doc.page.number}`, pageWidth - marginRight, footerY, { align: "right" });
-      };
-
-      /** === TABLE HEADER === */
-      const drawTableHeader = (startY) => {
-        const colX = [70, 240, 410];
-        const rowHeight = 22;
-        doc.rect(colX[0] - 20, startY - 6, pageWidth - 100, rowHeight).fill("#003399");
-        doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(11);
-        doc.text("Date", colX[0], startY);
-        doc.text("Punch In", colX[1], startY);
-        doc.text("Punch Out", colX[2], startY);
-        doc.fillColor("#000000");
-        return startY + rowHeight;
-      };
-
-      /** === MAIN CONTENT === */
-      drawHeader();
-      let y = drawTableHeader(doc.y + 25);
-      const rowHeight = 22;
-      const colX = [70, 240, 410];
-      const pageHeight = doc.page.height;
-      const bottomMargin = 70;
-
-      filteredRecords.forEach((rec, i) => {
-        if (y + rowHeight > pageHeight - bottomMargin) {
-          drawFooter();
-          doc.addPage();
-          drawHeader();
-          y = drawTableHeader(doc.y + 25);
-        }
-
-        if (i % 2 === 0) {
-          doc.rect(50, y - 6, pageWidth - 100, rowHeight).fill("#f5f7ff");
-        }
-
-        doc.fillColor("#000000").font("Helvetica").fontSize(10);
-        doc.text(rec.date || "—", colX[0], y);
-        doc.text(rec.punchIn || "—", colX[1], y);
-        doc.text(rec.punchOut || "—", colX[2], y);
-        y += rowHeight;
-        doc.fillColor("#000000");
-      });
-
-      drawFooter();
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+/** Convert image from /public to Base64 */
+async function loadImageAsBase64(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
   });
+}
+
+/** sanitize filename */
+const sanitizeFilename = (name = "Attendance") =>
+  name.replace(/[\/\\?%*:|"<>]/g, "_");
+
+
+// ---------------------------------------------------------
+//  HEADER (Sync version – required for jsPDF AutoTable)
+// ---------------------------------------------------------
+function drawHeaderSync(doc, pageWidth, margin, title, student, logo) {
+  const name = student?.name || "";
+  const role = student?.role || "";
+
+  // LOGO (240px center)
+  doc.addImage(logo, "PNG", (pageWidth - 240) / 2, 20, 240, 120);
+
+  // MAIN TITLE
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(204, 0, 0);
+  doc.setFontSize(20);
+  doc.text(
+    "MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE",
+    pageWidth / 2,
+    160,
+    { align: "center" }
+  );
+
+  // SUBTITLE
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(12);
+  doc.setTextColor(33, 37, 41);
+  doc.text(
+    "Under the Management of Maharishi Dayanand College regd. by Govt of Haryana",
+    pageWidth / 2,
+    180,
+    { align: "center" }
+  );
+
+  // ISO BANNER
+  doc.setFillColor(0, 51, 153);
+  doc.rect(0, 195, pageWidth, 25, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor("#fff");
+  doc.text("ISO CERTIFIED 9001-2015 CERTIFIED", pageWidth / 2, 212, {
+    align: "center",
+  });
+
+  // REPORT TITLE
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor("#000");
+  doc.text(`${title} REPORT - 2025`, pageWidth / 2, 245, {
+    align: "center",
+  });
+
+  // STUDENT DETAILS
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Name: ${name}`, margin.left, 270);
+  if (role) {
+    doc.text(`Role: ${role}`, pageWidth - margin.right - 120, 270);
+  }
+
+  // LINE
+  doc.setDrawColor(200);
+  doc.line(margin.left, 280, pageWidth - margin.right, 280);
+}
+
+
+// ---------------------------------------------------------
+//  FOOTER
+// ---------------------------------------------------------
+function drawPdfFooter(doc, pageWidth, margin, pageNumber) {
+  const pageCount = doc.internal.getNumberOfPages();
+  const footerY = doc.internal.pageSize.getHeight() - 40;
+
+  doc.setDrawColor(220);
+  doc.line(margin.left, footerY - 8, pageWidth - margin.right, footerY - 8);
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text("Powered by Desinerz Academy", margin.left, footerY);
+  doc.text(
+    `Page ${pageNumber} of ${pageCount}`,
+    pageWidth - margin.right,
+    footerY,
+    { align: "right" }
+  );
+}
+
+
+// ---------------------------------------------------------
+//  FINAL PDF DOWNLOAD (MATCHES PRINT EXACTLY)
+// ---------------------------------------------------------
+export async function downloadPDF(
+  tableTitle = "Attendance",
+  tableRecords = [],
+  student = {}
+) {
+  if (!tableRecords.length) return;
+
+  // PAGE SIZE: width 850px (same as print)
+  const doc = new jsPDF({
+    unit: "pt",
+    format: [850, 842],
+  });
+
+  const pageWidth = 850;
+  const margin = { top: 300, left: 40, right: 40, bottom: 60 };
+
+  // LOAD LOGO (before drawing)
+  const logo = await loadImageAsBase64("/DesinerzAcademyDark.png");
+
+  // DRAW HEADER FIRST
+  drawHeaderSync(doc, pageWidth, margin, tableTitle, student, logo);
+
+  const head = [["Date", "Punch In", "Punch Out"]];
+  const body = tableRecords.map((r) => [
+    r.date,
+    r.punchIn ?? "—",
+    r.punchOut ?? "—",
+  ]);
+
+  autoTable(doc, {
+    head,
+    body,
+    startY: margin.top, // table starts after header
+    margin,
+    styles: {
+      font: "helvetica",
+      fontSize: 12,
+      cellPadding: 8,
+    },
+    headStyles: {
+      fillColor: [0, 51, 153],
+      textColor: 255,
+      fontStyle: "bold",
+    },
+    alternateRowStyles: { fillColor: [245, 247, 255] },
+    tableLineColor: [220, 220, 220],
+    tableLineWidth: 0.5,
+
+    // RUN ON EVERY PAGE
+    didDrawPage: (data) => {
+      const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+
+      // Redraw header for pages > 1
+      if (pageNumber > 1) {
+        drawHeaderSync(doc, pageWidth, margin, tableTitle, student, logo);
+      }
+
+      drawPdfFooter(doc, pageWidth, margin, pageNumber);
+    },
+  });
+
+  const safe = sanitizeFilename(tableTitle);
+  doc.save(`${safe}.pdf`);
+}
+
+
+// ---------------------------------------------------------
+//  PRINT VERSION (unchanged)
+// ---------------------------------------------------------
+function escapeHtml(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function buildPrintHtml(title, rowsHtml, student) {
+  const now = new Date().toLocaleString();
+  const name = student?.name ?? "";
+  const role = student?.role ?? "";
+  const logoUrl = "/DesinerzAcademyDark.png";
+
+  return `
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${title}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<style>
+@page { margin: 36pt; }
+html, body { font-family: "Poppins", Arial; background:#fff; margin:0; padding:0; }
+.print-wrapper { width:850px; margin:auto; padding:20px; }
+.header { text-align:center; }
+.logo { width:240px; margin-bottom:10px; }
+.institute { font-size:20px; font-weight:700; color:#cc0000; }
+.sub-title { font-size:12px; margin-top:4px; color:#333; }
+.iso-banner { background:#003399; color:#fff; padding:6px 0; margin-top:8px; font-size:12px; font-weight:bold; }
+.report-title { margin-top:12px; font-size:16px; font-weight:bold; }
+.meta-line { margin-top:12px; display:flex; justify-content:space-between; font-size:13px; }
+table { width:100%; border-collapse:collapse; margin-top:20px; font-size:13px; }
+table th { background:#003399; color:#fff; padding:10px; border:1px solid #ddd; }
+table td { padding:10px; border:1px solid #ccc; text-align:center; }
+table tr:nth-child(even) { background:#f8f9ff; }
+.footer { margin-top:20px; text-align:right; font-size:12px; color:#555; border-top:1px solid #ddd; padding-top:8px; }
+@media print { body { -webkit-print-color-adjust: exact; } }
+</style>
+</head>
+
+<body>
+<div class="print-wrapper">
+
+  <div class="header">
+    <img src="${logoUrl}" class="logo" />
+    <div class="institute">MAHARISHI DAYANAND DIGITAL COMPUTER INSTITUTE</div>
+    <div class="sub-title">Under the Management of Maharishi Dayanand College regd. by Govt of Haryana</div>
+    <div class="iso-banner">ISO CERTIFIED 9001-2015 CERTIFIED</div>
+    <div class="report-title">${escapeHtml(title)} REPORT - 2025</div>
+  </div>
+
+  <div class="meta-line">
+    <div><strong>Name:</strong> ${escapeHtml(name)}</div>
+    <div><strong>Role:</strong> ${escapeHtml(role)}</div>
+    <div><strong>Generated:</strong> ${escapeHtml(now)}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Punch In</th><th>Punch Out</th></tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  <div class="footer">Powered by Desinerz Academy</div>
+
+</div>
+
+<script>
+window.onload = () => setTimeout(() => window.print(), 300);
+</script>
+
+</body>
+</html>
+`;
+}
+
+export function printTableHtml(title, records = [], student = {}) {
+  if (!records.length) return;
+
+  const rowsHtml = records
+    .map(
+      (r) => `
+<tr>
+  <td>${escapeHtml(r.date ?? "")}</td>
+  <td>${escapeHtml(r.punchIn ?? "—")}</td>
+  <td>${escapeHtml(r.punchOut ?? "—")}</td>
+</tr>`
+    )
+    .join("");
+
+  const html = buildPrintHtml(title, rowsHtml, student);
+  const win = window.open("", "_blank", "width=900,height=700");
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 }

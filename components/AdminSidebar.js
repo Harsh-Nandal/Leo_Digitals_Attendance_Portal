@@ -6,69 +6,82 @@ import { usePathname } from "next/navigation";
 export default function AdminSidebar({ setView, setShowAbsent }) {
   const pathname = usePathname();
 
+  const menu = [
+    {
+      label: "Dashboard",
+      href: "/admin/dashboard",
+      icon: <FaTachometerAlt size={16} />,
+    },
+    {
+      label: "Absentees",
+      href: "/admin/attendance/absent",
+      icon: <FaUserTimes size={16} />,
+    },
+    {
+      label: "All Records",
+      href: "/admin/records",
+      icon: <FaUserTimes size={16} />,
+    },
+    {
+      label: "Students",
+      href: "/admin/students",
+      icon: <FaUserTimes size={16} />,
+    },
+  ];
+
   return (
     <aside
       className="
         fixed top-0 left-0 h-screen 
-        w-64 bg-gradient-to-b from-white via-gray-100 to-gray-200 
-        text-gray-800 flex flex-col shadow-lg z-50
+        w-64 bg-white 
+        text-gray-800 flex flex-col z-50
+        border-r border-gray-200
       "
     >
-      <div className="p-6 flex items-center gap-3 border-b border-gray-300">
-        {/* Logo */}
+      {/* Logo */}
+      <div className="px-6 py-8 flex items-center justify-center border-b border-gray-200">
         <img
           src="/DesinerzAcademyDark.png"
           alt="Logo"
-          className="w-full h-auto mb-4 drop-shadow-lg"
+          className="w-40 h-auto object-contain"
         />
       </div>
 
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-        {/* Dashboard button */}
-        <Link
-          href={"/admin/dashboard"}
-          onClick={() => setShowAbsent(false)}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
-                     bg-gradient-to-r from-gray-700 to-gray-900 
-                     hover:from-gray-600 hover:to-gray-800 
-                     transition text-white font-medium shadow-md"
-        >
-          <FaTachometerAlt /> Dashboard
-        </Link>
+      {/* Menu */}
+      <nav className="flex-1 px-3 py-4 space-y-1">
+        {menu.map((item, i) => {
+          const active = pathname === item.href;
 
-        {/* Absent Today button: only visible on /admin/dashboard */}
-        
-          <Link
-            href={"/admin/attendance/absent"}
-            className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
-                       bg-gradient-to-r from-red-500 to-red-600 
-                       hover:from-red-400 hover:to-red-500 
-                       transition text-white font-medium shadow-md"
-          >
-            <FaUserTimes /> Absent Today
-          </Link>
-        
+          return (
+            <Link
+              key={i}
+              href={item.href}
+              onClick={() => item.label === "Dashboard" && setShowAbsent(false)}
+              className={`
+                flex items-center gap-3 
+                w-full px-4 py-3 rounded-lg text-sm font-medium
+                transition-all select-none
 
-        {/* Records link */}
-        <Link
-          href={"/admin/records"}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
-                     bg-gradient-to-r from-red-500 to-red-600 
-                     hover:from-red-400 hover:to-red-500 
-                     transition text-white font-medium shadow-md"
-        >
-          <FaUserTimes /> Records
-        </Link>
-        <Link
-          href={"/admin/students"}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg 
-                     bg-gradient-to-r from-red-500 to-red-600 
-                     hover:from-red-400 hover:to-red-500 
-                     transition text-white font-medium shadow-md"
-        >
-          <FaUserTimes /> Students
-        </Link>
+                ${
+                  active
+                    ? "bg-[#5B2EFF] text-white shadow-sm"
+                    : "text-gray-700 hover:bg-gray-100"
+                }
+              `}
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
+
+      {/* Logout */}
+      <div className="px-6 py-4 border-t border-gray-200">
+        <button className="w-full py-2 text-gray-600 text-sm hover:text-gray-900">
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }

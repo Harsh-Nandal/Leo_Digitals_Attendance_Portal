@@ -34,7 +34,7 @@ export default function StudentPage() {
   const openNoDataModal = () => setShowNoDataModal(true);
   const closeNoDataModal = () => setShowNoDataModal(false);
 
-  // Fetch student / month summary
+  // FETCH MONTH DATA
   useEffect(() => {
     if (!id || !selectedMonth) return;
 
@@ -63,10 +63,12 @@ export default function StudentPage() {
     fetchData();
   }, [id, selectedMonth, router]);
 
-  // Fetch day records for selected date
+  // FETCH DAY DATA
   useEffect(() => {
     if (!id || !selectedDate) return;
+
     const token = localStorage.getItem("adminToken");
+
     const fetchDayData = async () => {
       try {
         const res = await fetch(`/api/admin/student/${id}?date=${selectedDate}`, {
@@ -74,20 +76,24 @@ export default function StudentPage() {
         });
         if (!res.ok) throw new Error(`Error: ${res.statusText}`);
         const data = await res.json();
+
         if (!data.dayRecords || data.dayRecords.length === 0) {
           openNoDataModal();
         }
+
         setDayRecords(data.dayRecords || []);
       } catch (err) {
         console.error(err);
         openNoDataModal();
       }
     };
+
     fetchDayData();
   }, [selectedDate, id]);
 
   const fetchPrevAndCurrentWeek = async () => {
     const token = localStorage.getItem("adminToken");
+
     try {
       const res = await fetch(`/api/admin/student/${id}?prevWeek=true`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -100,7 +106,7 @@ export default function StudentPage() {
         return;
       }
 
-      setTableTitle(`Attendance for ${data.prevWeekRange.start} to ${data.currentWeekRange.end}`);
+      setTableTitle(`Attendance for ${data.prevWeekRange.start} → ${data.currentWeekRange.end}`);
       setTableRecords(data.records || []);
     } catch (err) {
       console.error(err);
@@ -110,15 +116,19 @@ export default function StudentPage() {
 
   const fetchSelectedMonth = async () => {
     const token = localStorage.getItem("adminToken");
+
     try {
-      const res = await fetch(`/api/admin/student/${id}?month=${selectedMonth}&allDays=true`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `/api/admin/student/${id}?month=${selectedMonth}&allDays=true`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
       if (!res.ok) throw new Error(`Error: ${res.statusText}`);
       const data = await res.json();
-      if (!data.records || data.records.length === 0) {
-        openNoDataModal();
-      }
+
+      if (!data.records || data.records.length === 0) openNoDataModal();
+
       setTableTitle(`Attendance for ${selectedMonth}`);
       setTableRecords(data.records || []);
     } catch (err) {
@@ -127,110 +137,137 @@ export default function StudentPage() {
     }
   };
 
+  // LOADING UI
   if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-green-400"></div>
+      <div className="flex justify-center items-center min-h-screen bg-purple-50 text-purple-600">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-purple-500"></div>
       </div>
     );
 
+  // ERROR UI
   if (error)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-red-950 text-red-300">
-        <p>Error: {error}</p>
+      <div className="flex justify-center items-center min-h-screen bg-purple-50 text-red-500">
+        <p>{error}</p>
       </div>
     );
 
   if (!student)
     return (
-      <div className="flex justify-center items-center min-h-screen text-white bg-gray-900">
+      <div className="flex justify-center items-center min-h-screen bg-purple-50 text-gray-700">
         <p>No student found.</p>
       </div>
     );
 
   return (
-    <div className="flex min-h-screen text-white">
+    <div className="flex min-h-screen text-gray-800 bg-gradient-to-br from-white via-purple-50 to-purple-100">
+
       <AdminSidebar />
 
-      <div className="ml-64 flex-1 flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-black min-h-screen">
-        <AdminHeader showAbsent={"Student Report"} />
+      {/* MAIN UI */}
+      <div className="ml-64 flex-1 flex flex-col">
 
-        <main className="mt-16 p-6 container mx-auto">
-          {/* Student Header */}
-          <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-6 bg-slate-800/50 rounded-2xl p-6 shadow-xl border border-slate-700">
+        <AdminHeader showAbsent="Student Report" />
+
+        <main className="mt-20 px-10 pb-10 w-full">
+
+          {/* TOP STUDENT CARD */}
+          <div className="
+            bg-white/70 backdrop-blur-xl border border-purple-200
+            rounded-2xl px-6 py-6 mb-8 shadow-lg
+            flex flex-col md:flex-row justify-between items-start md:items-center gap-5
+          ">
             <div>
-              <h2 className="text-3xl md:text-4xl font-extrabold text-green-400 drop-shadow-lg">
-                {student.name}
-              </h2>
-              <p className="text-sm text-slate-300 mt-1">
-                Role: <span className="font-medium text-white">{student.role}</span>
+              <h2 className="text-3xl font-extrabold text-purple-700">{student.name}</h2>
+              <p className="text-gray-600 text-sm mt-1">
+                Role: <span className="text-gray-900 font-semibold">{student.role}</span>
               </p>
             </div>
-            <div className="flex gap-2 items-center">
-              <label className="text-sm text-gray-300">📆 Month:</label>
+
+            <div className="flex items-center gap-3">
+              <label className="text-gray-700 text-sm font-medium">Month:</label>
               <input
                 type="month"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="p-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="
+                  bg-white/70 border border-purple-300
+                  rounded-lg px-3 py-2 text-gray-800 shadow-sm
+                  focus:ring-2 focus:ring-purple-500 outline-none
+                "
               />
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <SummaryCard title="🗓 Weekly Attendance" data={student.weekly} />
-            <SummaryCard title="📅 Monthly Attendance" data={student.monthly} />
+          {/* SUMMARY CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <SummaryCard title="Weekly Attendance" data={student.weekly} />
+            <SummaryCard title="Monthly Attendance" data={student.monthly} />
           </div>
 
-          {/* Date Selector */}
-          <DateSelector selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedMonth={selectedMonth} />
+          {/* DATE SELECTOR */}
+          <DateSelector
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            selectedMonth={selectedMonth}
+          />
 
-          {/* Day Records */}
+          {/* DAILY RECORD UI */}
           {selectedDate && dayRecords.length > 0 && (
-            <div className="bg-slate-900/60 rounded-2xl shadow-xl border border-slate-700 p-6 mb-6">
-              <h3 className="text-xl font-semibold mb-3 text-green-300">
-                Punch Records for {selectedDate}
+            <div className="
+              bg-white/70 backdrop-blur-xl border border-purple-200
+              rounded-2xl p-6 shadow-lg mb-8
+            ">
+              <h3 className="text-lg font-semibold text-purple-700 mb-4">
+                Punch Records – {selectedDate}
               </h3>
+
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gradient-to-r from-slate-800 to-slate-700">
+                <table className="w-full text-sm text-gray-700">
+                  <thead className="bg-purple-100 text-purple-700">
                     <tr>
-                      <th className="p-3 text-left text-green-300">Punch In</th>
-                      <th className="p-3 text-left text-green-300">Punch Out</th>
+                      <th className="p-3 text-left">Punch In</th>
+                      <th className="p-3 text-left">Punch Out</th>
                     </tr>
                   </thead>
+
                   <tbody>
-                    {dayRecords.map((r, idx) => (
+                    {dayRecords.map((r, i) => (
                       <tr
-                        key={idx}
+                        key={i}
                         className={`
-                          ${idx % 2 === 0 ? "bg-slate-800/40" : "bg-slate-900/40"} 
-                          hover:bg-slate-700/60 transition
+                          ${i % 2 === 0 ? "bg-purple-50" : "bg-purple-100/40"}
+                          hover:bg-purple-200 transition
                         `}
                       >
-                        <td className="p-3 text-slate-200">{r.punchIn || "—"}</td>
-                        <td className="p-3 text-slate-200">{r.punchOut || "—"}</td>
+                        <td className="p-3">{r.punchIn || "—"}</td>
+                        <td className="p-3">{r.punchOut || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="mt-4">
-                <button
-                  onClick={() => window.print()}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-500 transition shadow-md"
-                >
-                  🖨 Print Records
-                </button>
-              </div>
+
+              <button
+                onClick={() => window.print()}
+                className="
+                  mt-4 bg-purple-600 hover:bg-purple-500
+                  px-4 py-2 rounded-lg text-white shadow-md
+                "
+              >
+                Print
+              </button>
             </div>
           )}
 
-          {/* Action Buttons */}
-          <ActionButtons fetchPrevAndCurrentWeek={fetchPrevAndCurrentWeek} fetchSelectedMonth={fetchSelectedMonth} />
+          {/* ACTION BUTTONS */}
+          <ActionButtons
+            fetchPrevAndCurrentWeek={fetchPrevAndCurrentWeek}
+            fetchSelectedMonth={fetchSelectedMonth}
+          />
 
-          {/* Attendance Table */}
+          {/* MAIN TABLE */}
           {tableRecords.length > 0 && (
             <RecordsTable
               tableTitle={tableTitle}
@@ -240,6 +277,7 @@ export default function StudentPage() {
           )}
 
           {showNoDataModal && <NoDataModal onClose={closeNoDataModal} />}
+
         </main>
       </div>
     </div>

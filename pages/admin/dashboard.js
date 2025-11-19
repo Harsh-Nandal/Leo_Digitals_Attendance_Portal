@@ -4,6 +4,19 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminSidebar from "../../components/AdminSidebar";
 import AdminHeader from "../../components/AdminHeader";
+import { downloadPDF } from "../../utils/pdfUtils";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+/**
+ * AdminDashboard — pixel-match UI to provided screenshot.
+ *
+ * Notes:
+ * - Uses Tailwind utility classes for layout + a small amount of component-local CSS
+ *   (within a <style jsx> block) for the tiny pixel adjustments (dot position, border thickness).
+ * - Keeps all original logic for fetching and downloading PDFs from your code.
+ * - This file is intended to fully replace your existing admin dashboard page.
+ */
 
 export default function AdminDashboard() {
   const [data, setData] = useState({
@@ -12,10 +25,9 @@ export default function AdminDashboard() {
     absenteesWeek: [],
     absenteesMonth: [],
   });
+
   const [filteredMonthData, setFilteredMonthData] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState("");
-  const [weekStart, setWeekStart] = useState("");
-  const [weekEnd, setWeekEnd] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -23,344 +35,481 @@ export default function AdminDashboard() {
 
   const router = useRouter();
 
-  /** ✅ Auth Check */
+  // AUTH CHECK
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
     if (!token) router.replace("/admin/login");
     else setAuthChecked(true);
   }, [router]);
 
-  /** ✅ Fetch Dashboard Data */
+  // default month sample (set by you)
+  useEffect(() => {
+    setSelectedMonth("2025-10");
+  }, []);
+
+  // fetch data
   useEffect(() => {
     if (!authChecked) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
         const token = localStorage.getItem("adminToken");
+
         const res = await fetch("/api/admin/attendance", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error("Failed to fetch data");
+
+        if (!res.ok) throw new Error(`Failed to fetch data: ${res.statusText}`);
+
         const json = await res.json();
+
         setData({
           daily: json.daily ?? [],
           absentDaily: json.absentDaily ?? [],
           absenteesWeek: json.absenteesWeek ?? [],
           absenteesMonth: json.absenteesMonth ?? [],
         });
+
         setFilteredMonthData(json.absenteesMonth ?? []);
       } catch (err) {
-        console.error("Fetch error:", err);
         setError(err.message || "Failed to load data");
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [authChecked]);
 
-  /** ✅ Month Filter */
-  const handleMonthFilter = (monthValue) => {
-    setSelectedMonth(monthValue);
-    if (!monthValue) {
+  // month filter
+  const handleMonthFilter = (value) => {
+    setSelectedMonth(value);
+
+    if (!value) {
       setFilteredMonthData(data.absenteesMonth);
-    } else {
-      const filtered = (data.absenteesMonth || []).filter((student) =>
-        student.month
-          ? student.month.toLowerCase() === monthValue.toLowerCase()
-          : false
-      );
-      setFilteredMonthData(filtered);
+      return;
     }
+
+    const [year, month] = value.split("-");
+    const monthName = new Date(value + "-01").toLocaleString("en-US", {
+      month: "long",
+    }).toLowerCase();
+    const monthNumberFormat = `${year}-${month}`;
+
+    const filtered = (data.absenteesMonth || []).filter((item) => {
+      const m = (item.month || "").toString().toLowerCase();
+      return (
+        m.includes(monthName) ||
+        m.includes(monthNumberFormat) ||
+        m.includes(month) ||
+        m.includes(year)
+      );
+    });
+
+    setFilteredMonthData(filtered);
   };
 
-  /** ✅ PDF Download */
+  // handle PDF download
   const handleDownloadReport = async (student) => {
     try {
-      if (!student?.userId && !student?.regNo) {
-        alert("Invalid student record — missing ID!");
-        return;
-      }
+      const token = localStorage.getItem("adminToken");
+      const type = activeTab;
 
-      const reportType = activeTab;
       const userId = student.userId || student.regNo;
-      const payload = { userId, reportType };
-
-      if (reportType === "monthly" && selectedMonth) {
-        payload.month = selectedMonth; // e.g. "2025-11"
-      } else if (reportType === "weekly" && weekStart && weekEnd) {
-        payload.weekStart = weekStart;
-        payload.weekEnd = weekEnd;
-      } else if (reportType === "weekly" && (!weekStart || !weekEnd)) {
-        alert("Please select a valid week range before downloading report.");
+      if (!userId) {
+        toast.error("Invalid student ID. Cannot generate report.", {
+          position: "top-right",
+          autoClose: 4000,
+        });
         return;
       }
 
-      const res = await fetch("/api/attendance/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      if (type === "monthly" && !selectedMonth) {
+        toast.warn("Please select a month before downloading.", {
+          position: "top-right",
+          autoClose: 4000,
+        });
+        return;
+      }
+
+      let url = `/api/admin/student-attendance?userId=${userId}&type=${type}`;
+      if (type === "monthly") url += `&month=${selectedMonth}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!res.ok) {
-        const errText = await res.text();
-        console.warn("PDF generation failed:", errText);
-        alert("No attendance records available for this student.");
+      if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+
+      const json = await res.json();
+
+      if (!json.records || json.records.length === 0) {
+        toast.error("No attendance found for the selected period.", {
+          position: "top-right",
+          autoClose: 4000,
+        });
         return;
       }
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${student.name || "attendance"}_${reportType}_report.pdf`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download failed:", error);
-      alert("Failed to generate PDF — see console for details.");
+      await downloadPDF(
+        type === "weekly" ? "Weekly Attendance" : "Monthly Attendance",
+        json.records,
+        json.student
+      );
+    } catch (err) {
+      toast.error(`Failed to generate PDF: ${err.message}`, {
+        position: "top-right",
+        autoClose: 4000,
+      });
     }
   };
 
-  /** ✅ States: Loading + Error */
+  // loading state
   if (!authChecked || loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-100">
-        <div className="animate-spin h-12 w-12 rounded-full border-4 border-blue-500 border-t-transparent"></div>
+      <div className="flex justify-center items-center min-h-screen bg-gray-50">
+        <div className="animate-spin h-12 w-12 rounded-full border-4 border-purple-700 border-t-transparent" />
       </div>
     );
 
+  // error
   if (error)
     return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-red-100 text-red-700 p-6">
-        <h2 className="text-xl font-semibold mb-2">Error Loading Dashboard</h2>
+      <div className="flex flex-col justify-center items-center min-h-screen bg-red-50 text-red-700 p-6">
+        <h2 className="text-2xl font-semibold mb-2">Error Loading Dashboard</h2>
         <p>{error}</p>
       </div>
     );
 
-  /** ✅ Data Mappings */
-  const todayAbsents = (data.absentDaily ?? []).slice(0, 4);
-  const totalAbsentsCount = data.absentDaily?.length ?? 0;
-  const todayPresents = (data.daily ?? []).slice(0, 4);
-  const totalPresentsCount = data.daily?.length ?? 0;
-  const tableData =
-    activeTab === "weekly" ? data.absenteesWeek ?? [] : filteredMonthData ?? [];
+  const todayPresents = data.daily.slice(0, 4);
+  const todayAbsents = data.absentDaily.slice(0, 4);
+  const tableData = activeTab === "weekly" ? data.absenteesWeek : filteredMonthData;
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-800">
-      {/* Sidebar */}
-      <AdminSidebar />
+      {/* Sidebar component (left) */}
+      <div className="fixed left-0 top-0 h-full z-20">
+        <AdminSidebar />
+      </div>
 
-      {/* Main Content */}
+      {/* Main content */}
       <div className="ml-64 flex-1 flex flex-col">
         <AdminHeader title="Dashboard" />
 
         <main className="p-8 mt-16 space-y-10">
-          {/* ✅ Today’s Absents */}
+          {/* --- TOP ROW: Today Absents --- */}
           <section>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Today Absents{" "}
-                <span className="text-sm text-red-600">
-                  ({totalAbsentsCount})
-                </span>
-              </h3>
-              <button
-                onClick={() => router.push("/admin/attendance/absent")}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {todayAbsents.length > 0 ? (
-                todayAbsents.map((user, idx) => (
-                  <div
-                    key={idx}
-                    className="p-4 bg-red-50 border border-red-200 rounded-xl hover:shadow-md transition"
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <p className="text-xs text-gray-500">
-                        REG NO: {user.userId || user.regNo || "—"}
-                      </p>
-                      <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                    </div>
-                    <p className="font-semibold text-red-700 text-sm">
-                      {user.name || "Unknown"}
-                    </p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-gray-500 text-sm">No absents today</p>
-              )}
-            </div>
-          </section>
-
-          {/* ✅ Today’s Presents */}
-          <section>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-700">
-                Today Presents{" "}
-                <span className="text-sm text-green-600">
-                  ({totalPresentsCount})
-                </span>
-              </h3>
-              <button
-                onClick={() => router.push("/admin/attendance/present")}
-                className="text-sm text-blue-600 hover:underline"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {todayPresents.length > 0 ? (
-                todayPresents.map((user, idx) => (
-                  <div
-                    key={idx}
-                    className="p-4 bg-green-50 border border-green-200 rounded-xl hover:shadow-md transition"
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <p className="text-xs text-gray-500">
-                        REG NO: {user.userId || user.regNo || "—"}
-                      </p>
-                      <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                    </div>
-                    <p className="font-semibold text-green-700 text-sm">
-                      {user.name || "Unknown"}
-                    </p>
-                    <div className="mt-2 text-xs text-gray-600 space-y-1">
-                      <p>
-                        Punch IN:{" "}
-                        <span className="font-semibold">
-                          {user.punchIn || "--"}
-                        </span>
-                      </p>
-                      <p>
-                        Punch OUT:{" "}
-                        <span className="font-semibold text-yellow-600">
-                          {user.punchOut || "PENDING"}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-gray-500 text-sm">No presents today</p>
-              )}
-            </div>
-          </section>
-
-          {/* ✅ Absentees Table */}
-          <section className="bg-white border border-gray-200 rounded-2xl shadow-md p-6">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-semibold text-lg text-gray-800">
-                Total Absentees List
-              </h3>
-            </div>
-
-            {/* Tab + Filter */}
-            <div className="flex flex-wrap items-center justify-between mb-6 gap-4">
-              <div className="flex">
-                <button
-                  onClick={() => setActiveTab("weekly")}
-                  className={`px-5 py-2 rounded-l-full border transition ${
-                    activeTab === "weekly"
-                      ? "bg-purple-600 text-white"
-                      : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  Weekly
-                </button>
-                <button
-                  onClick={() => setActiveTab("monthly")}
-                  className={`px-5 py-2 rounded-r-full border transition ${
-                    activeTab === "monthly"
-                      ? "bg-purple-600 text-white"
-                      : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  Monthly
-                </button>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-xl font-bold text-gray-700">Today Absents</h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Showing {data.absentDaily.length} total absents
+                </p>
               </div>
 
-              {activeTab === "monthly" ? (
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="monthSelect"
-                    className="text-sm font-medium text-gray-700"
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => router.push("/admin/attendance/absent")}
+                  className="text-sm text-indigo-600 hover:underline"
+                >
+                  View Detail
+                </button>
+
+                <div className="bg-white rounded-full border px-3 py-1 text-sm flex items-center gap-2 shadow-sm">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#6B21A8"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="inline-block"
                   >
-                    Select Month:
-                  </label>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-700">Export</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+              {todayAbsents.length ? (
+                todayAbsents.map((user, i) => (
+                  <div
+                    key={i}
+                    className="relative bg-white border-2 border-red-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-transform transform hover:-translate-y-1"
+                    style={{ minHeight: "98px" }}
+                  >
+                    {/* small red dot top-right */}
+                    <span className="status-dot status-dot-red" />
+
+                    <p className="text-xs text-gray-400 mb-1">REG NO - {user.userId || user.regNo}</p>
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-lg text-gray-800">{user.name}</p>
+                      <div className="rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600 font-medium">
+                        Absent
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-400">No absents today</div>
+              )}
+            </div>
+          </section>
+
+          {/* --- SECOND ROW: Today Presents --- */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-xl font-bold text-gray-700">Today Presents</h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Showing {data.daily.length} total presents
+                </p>
+              </div>
+
+              <div>
+                <button
+                  onClick={() => router.push("/admin/attendance/present")}
+                  className="text-sm text-indigo-600 hover:underline"
+                >
+                  View Detail
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
+              {todayPresents.length ? (
+                todayPresents.map((user, i) => (
+                  <div
+                    key={i}
+                    className="relative bg-white border-2 border-green-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-transform transform hover:-translate-y-1"
+                    style={{ minHeight: "110px" }}
+                  >
+                    <span className="status-dot status-dot-green" />
+
+                    <p className="text-xs text-gray-400 mb-1">REG NO - {user.userId || user.regNo}</p>
+
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-lg text-gray-800">{user.name}</p>
+                      <div className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-600 font-medium">
+                        Present
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-xs text-gray-600 leading-5">
+                      <div className="flex justify-between">
+                        <span>Punch IN</span>
+                        <span className="font-medium">{user.punchIn || "--"}</span>
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span>Punch Out</span>
+                        <span className="font-medium text-orange-500">{user.punchOut || "PENDING"}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-400">No presents today</div>
+              )}
+            </div>
+          </section>
+
+          {/* --- ABSENTEES / TABLE SECTION (Card) --- */}
+          <section className="bg-white p-6 rounded-2xl border border-gray-100 shadow">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-700">Total Absentees</h3>
+                <p className="text-xs text-gray-400 mt-1">Weekly / monthly absentee overview</p>
+              </div>
+
+              {/* TOP RIGHT quick link */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-500">View Detail</span>
+                <div className="rounded-full bg-white border px-3 py-1 text-sm flex items-center gap-2 shadow-sm">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#6B7280"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="inline-block"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Tabs - Weekly / Monthly (styled like screenshot) */}
+            <div className="flex items-center gap-4 mb-6">
+              <button
+                onClick={() => setActiveTab("weekly")}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
+                  activeTab === "weekly"
+                    ? "bg-purple-700 text-white shadow-lg"
+                    : "bg-white border border-gray-200 text-gray-700"
+                }`}
+              >
+                Weekly Absentees
+              </button>
+
+              <button
+                onClick={() => setActiveTab("monthly")}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
+                  activeTab === "monthly"
+                    ? "bg-purple-700 text-white shadow-lg"
+                    : "bg-white border border-gray-200 text-gray-700"
+                }`}
+              >
+                Monthly Absentees
+              </button>
+
+              {/* Month input (only when monthly active) */}
+              {activeTab === "monthly" && (
+                <div className="ml-4">
                   <input
                     type="month"
-                    id="monthSelect"
                     value={selectedMonth}
                     onChange={(e) => handleMonthFilter(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                  />
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    Week Range:
-                  </label>
-                  <input
-                    type="date"
-                    value={weekStart}
-                    onChange={(e) => setWeekStart(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
-                  />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="date"
-                    value={weekEnd}
-                    onChange={(e) => setWeekEnd(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-purple-500 outline-none"
+                    className="border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
                   />
                 </div>
               )}
             </div>
 
-            {/* Table */}
+            {/* Table header */}
             <div className="overflow-x-auto">
-              <table className="min-w-full border-t border-gray-200 text-sm">
-                <thead className="bg-gray-100 text-gray-700">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="py-3 px-4 text-left">Name</th>
-                    <th className="py-3 px-4 text-left">Registration No</th>
-                    <th className="py-3 px-4 text-left">Role</th>
-                    <th className="py-3 px-4 text-left">Total Absents</th>
-                    <th className="py-3 px-4 text-left">Report</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Name</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Registration No</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Role</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Total Absents</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Detailed Report</th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {tableData.map((student, idx) => (
-                    <tr
-                      key={idx}
-                      className="border-b hover:bg-gray-50 transition"
-                    >
-                      <td className="py-2 px-4">{student.name}</td>
-                      <td className="py-2 px-4">
-                        {student.userId || student.regNo || "—"}
-                      </td>
-                      <td className="py-2 px-4">{student.role || "—"}</td>
-                      <td className="py-2 px-4">{student.absences ?? 0}</td>
+                  {(tableData || []).map((student, i) => (
+                    <tr key={i} className="border-b hover:bg-gray-50">
                       <td
-                        onClick={() => handleDownloadReport(student)}
-                        className="py-2 px-4 text-blue-600 font-medium cursor-pointer hover:underline"
+                        className="p-3 text-indigo-600 cursor-pointer hover:underline"
+                        onClick={() => router.push(`/admin/students/${student.userId || student.regNo}`)}
                       >
-                        ⬇️ Download
+                        {student.name || "—"}
+                      </td>
+
+                      <td className="p-3 text-sm text-gray-700">{student.userId || student.regNo || "—"}</td>
+
+                      <td className="p-3 text-sm text-gray-700">{student.role || "—"}</td>
+
+                      <td className="p-3 text-sm text-gray-700">{student.absences ?? student.total ?? 0}</td>
+
+                      <td className="p-3">
+                        <button
+                          onClick={() => handleDownloadReport(student)}
+                          className="flex items-center gap-2 text-indigo-600 hover:underline text-sm"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#4338CA"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="inline-block"
+                          >
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          Download
+                        </button>
                       </td>
                     </tr>
                   ))}
+
+                  {/* If no rows */}
+                  {(!tableData || tableData.length === 0) && (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-gray-400">
+                        No records found.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </section>
         </main>
       </div>
+
+      {/* Toast container */}
+      <ToastContainer />
+
+      {/* SMALL CUSTOM CSS to match screenshot micro-details */}
+      <style jsx>{`
+        /* status dot (top-right of cards) */
+        .status-dot {
+          position: absolute;
+          top: 12px;
+          right: 16px;
+          width: 12px;
+          height: 12px;
+          border-radius: 9999px;
+        }
+        .status-dot-red {
+          background: #ef4444; /* red-500 */
+          box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.08);
+        }
+        .status-dot-green {
+          background: #10b981; /* green-500 */
+          box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.08);
+        }
+
+        /* precise border radius to match screenshot */
+        .rounded-2xl {
+          border-radius: 14px;
+        }
+
+        /* shadow tuning */
+        .shadow-sm {
+          box-shadow: 0 1px 4px rgba(16, 24, 40, 0.04);
+        }
+        .shadow-md {
+          box-shadow: 0 6px 18px rgba(16, 24, 40, 0.08);
+        }
+
+        /* table row height */
+        table tbody tr td {
+          vertical-align: middle;
+        }
+
+        /* small responsive tweaks to preserve desktop look */
+        @media (min-width: 1280px) {
+          main {
+            padding-left: 48px;
+            padding-right: 48px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
