@@ -140,13 +140,14 @@ export default async function handler(req, res) {
       total: allUploadedUrls.length,
     });
 
-    // Save to DB
+    // Save to DB (fingerprintData is not used or required here - removed from model)
     const newUser = await User.create({
       name,
       userId,
       role,
       imageUrl,
       allImages: allUploadedUrls,
+      // No fingerprintData field included
     });
 
     // Download for Rekognition

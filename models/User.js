@@ -13,8 +13,9 @@ const UserSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
   role: { type: String, enum: ["student", "faculty"], required: true },
   imageUrl: { type: String, required: true }, // face image
-  fingerprintData: { type: String, required: true }, // base64 image or scanner data
+
   rekognition: { type: RekognitionSchema, default: {} },
+  // fingerprintData: { type: String }, // Made optional (removed required: true) or delete this line entirely if not needed
   createdAt: { type: Date, default: Date.now },
 });
 
