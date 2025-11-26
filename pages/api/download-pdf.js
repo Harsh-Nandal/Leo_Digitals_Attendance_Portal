@@ -1,6 +1,6 @@
 import connectDB from "../../lib/mongodb";
 import Attendance from "../../models/Attendance";
-import { generatePDF } from "../../utils/pdfUtils";
+import { downloadPDF } from "../../utils/pdfUtils"; // ✅ Correct import
 
 export default async function handler(req, res) {
   try {
@@ -17,7 +17,6 @@ export default async function handler(req, res) {
     let startDate, endDate;
 
     if (reportType === "monthly") {
-      // Example month = "2025-11"
       if (!month) {
         return res.status(400).json({ success: false, message: "Month is required for monthly report" });
       }
@@ -25,10 +24,8 @@ export default async function handler(req, res) {
       const [year, monthNum] = month.split("-").map(Number);
       startDate = new Date(year, monthNum - 1, 1);
       endDate = new Date(year, monthNum, 0, 23, 59, 59);
-
       query.date = { $gte: startDate, $lte: endDate };
     } else if (reportType === "weekly") {
-      // Expect weekStart and weekEnd in body as "YYYY-MM-DD"
       if (!weekStart || !weekEnd) {
         return res.status(400).json({ success: false, message: "Week start and end dates are required" });
       }
@@ -53,8 +50,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // Generate the PDF from the filtered attendance data
-    const pdfBuffer = await generatePDF(attendanceRecords, userId);
+    // ✅ Generate PDF using the correct function
+    const pdfBuffer = await downloadPDF("Attendance", attendanceRecords, { 
+        name: Attendance.name || "Student", 
+        role: "student" 
+    });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=attendance_${reportType}_${userId}.pdf`);

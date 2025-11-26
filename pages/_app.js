@@ -1,5 +1,6 @@
 // pages/_app.js
 import Head from "next/head";
+import { useEffect } from "react";   // ✅ FIX: useEffect imported
 import "../styles/globals.css";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
@@ -21,7 +22,7 @@ export default function MyApp({ Component, pageProps }) {
           console.warn("Failed to unregister SW in WebView", err);
         }
 
-        // ✅ Try clearing caches
+        // ✅ Clear caches
         if (caches && caches.keys) {
           try {
             const keys = await caches.keys();
@@ -59,7 +60,7 @@ export default function MyApp({ Component, pageProps }) {
           type="image/jpeg"
         />
 
-        {/* ✅ Preload splash image (kept, but won't be shown since splash removed) */}
+        {/* ✅ Preload image (kept, no splash UI so harmless) */}
         <link rel="preload" as="image" href="/largeLogoImage.jpg" type="image/jpeg" />
 
         {/* ✅ Tailwind CDN */}
@@ -81,7 +82,7 @@ export default function MyApp({ Component, pageProps }) {
         />
       </Head>
 
-      {/* ✅ Main App Content (loads immediately) */}
+      {/* ✅ Main App Content */}
       <Component {...pageProps} />
     </>
   );
