@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminSidebar from "../../components/AdminSidebar";
 import AdminHeader from "../../components/AdminHeader";
-import { downloadPDF } from "../../utils/pdfUtils";
+import { downloadPDF } from "../../utils/pdfUtils"; // This IS needed for client-side PDF generation
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -42,9 +42,10 @@ export default function AdminDashboard() {
     else setAuthChecked(true);
   }, [router]);
 
-  // default month sample (set by you)
+  // default month sample (set to current month)
   useEffect(() => {
-    setSelectedMonth("2025-10");
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    setSelectedMonth(currentMonth);
   }, []);
 
   // fetch data
@@ -92,9 +93,11 @@ export default function AdminDashboard() {
     }
 
     const [year, month] = value.split("-");
-    const monthName = new Date(value + "-01").toLocaleString("en-US", {
-      month: "long",
-    }).toLowerCase();
+    const monthName = new Date(value + "-01")
+      .toLocaleString("en-US", {
+        month: "long",
+      })
+      .toLowerCase();
     const monthNumberFormat = `${year}-${month}`;
 
     const filtered = (data.absenteesMonth || []).filter((item) => {
@@ -110,7 +113,7 @@ export default function AdminDashboard() {
     setFilteredMonthData(filtered);
   };
 
-  // handle PDF download
+  // FIXED: handle PDF download (now includes current date for weekly, and selected/current month for monthly)
   const handleDownloadReport = async (student) => {
     try {
       const token = localStorage.getItem("adminToken");
@@ -125,39 +128,49 @@ export default function AdminDashboard() {
         return;
       }
 
-      if (type === "monthly" && !selectedMonth) {
-        toast.warn("Please select a month before downloading.", {
-          position: "top-right",
-          autoClose: 4000,
-        });
-        return;
-      }
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-      let url = `/api/admin/student-attendance?userId=${userId}&type=${type}`;
-      if (type === "monthly") url += `&month=${selectedMonth}`;
+      // FIXED: Add &download=pdf to fetch ALL records (unfiltered) for PDF generation
+      let url = `/api/submit-attendance?userId=${userId}&type=${type}&download=pdf`;
+
+      if (type === "monthly") {
+        const month = selectedMonth || currentMonth;
+        url += `&month=${month}`;
+      } else if (type === "weekly") {
+        url += `&date=${currentDate}`; // Assuming API uses date for current week
+      }
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || `API Error: ${res.statusText}`);
+      }
 
-      const json = await res.json();
+      // Parse JSON response (now includes all records due to download=pdf)
+      const { records, student: studentData } = await res.json();
 
-      if (!json.records || json.records.length === 0) {
-        toast.error("No attendance found for the selected period.", {
+      // Validate data
+      if (!Array.isArray(records) || records.length === 0) {
+        toast.error("No attendance records found for this student.", {
           position: "top-right",
           autoClose: 4000,
         });
         return;
       }
 
-      await downloadPDF(
-        type === "weekly" ? "Weekly Attendance" : "Monthly Attendance",
-        json.records,
-        json.student
-      );
+      // Generate PDF client-side using the downloadPDF function
+      await downloadPDF("Attendance", records, studentData || student);
+
+      toast.success("PDF downloaded successfully!", {
+        position: "top-right",
+        autoClose: 3000,
+      });
     } catch (err) {
+      console.error("PDF generation failed:", err);
       toast.error(`Failed to generate PDF: ${err.message}`, {
         position: "top-right",
         autoClose: 4000,
@@ -184,7 +197,8 @@ export default function AdminDashboard() {
 
   const todayPresents = data.daily.slice(0, 4);
   const todayAbsents = data.absentDaily.slice(0, 4);
-  const tableData = activeTab === "weekly" ? data.absenteesWeek : filteredMonthData;
+  const tableData =
+    activeTab === "weekly" ? data.absenteesWeek : filteredMonthData;
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-800">
@@ -202,7 +216,9 @@ export default function AdminDashboard() {
           <section>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-xl font-bold text-gray-700">Today Absents</h3>
+                <h3 className="text-xl font-bold text-gray-700">
+                  Today Absents
+                </h3>
                 <p className="text-xs text-gray-400 mt-1">
                   Showing {data.absentDaily.length} total absents
                 </p>
@@ -233,7 +249,9 @@ export default function AdminDashboard() {
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                   </svg>
-                  <span className="text-xs font-medium text-gray-700">Export</span>
+                  <span className="text-xs font-medium text-gray-700">
+                    Export
+                  </span>
                 </div>
               </div>
             </div>
@@ -249,9 +267,13 @@ export default function AdminDashboard() {
                     {/* small red dot top-right */}
                     <span className="status-dot status-dot-red" />
 
-                    <p className="text-xs text-gray-400 mb-1">REG NO - {user.userId || user.regNo}</p>
+                    <p className="text-xs text-gray-400 mb-1">
+                      REG NO - {user.userId || user.regNo}
+                    </p>
                     <div className="flex items-center justify-between">
-                      <p className="font-semibold text-lg text-gray-800">{user.name}</p>
+                      <p className="font-semibold text-lg text-gray-800">
+                        {user.name}
+                      </p>
                       <div className="rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600 font-medium">
                         Absent
                       </div>
@@ -263,12 +285,13 @@ export default function AdminDashboard() {
               )}
             </div>
           </section>
-
           {/* --- SECOND ROW: Today Presents --- */}
           <section>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-xl font-bold text-gray-700">Today Presents</h3>
+                <h3 className="text-xl font-bold text-gray-700">
+                  Today Presents
+                </h3>
                 <p className="text-xs text-gray-400 mt-1">
                   Showing {data.daily.length} total presents
                 </p>
@@ -294,10 +317,14 @@ export default function AdminDashboard() {
                   >
                     <span className="status-dot status-dot-green" />
 
-                    <p className="text-xs text-gray-400 mb-1">REG NO - {user.userId || user.regNo}</p>
+                    <p className="text-xs text-gray-400 mb-1">
+                      REG NO - {user.userId || user.regNo}
+                    </p>
 
                     <div className="flex items-center justify-between">
-                      <p className="font-semibold text-lg text-gray-800">{user.name}</p>
+                      <p className="font-semibold text-lg text-gray-800">
+                        {user.name}
+                      </p>
                       <div className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-600 font-medium">
                         Present
                       </div>
@@ -306,11 +333,15 @@ export default function AdminDashboard() {
                     <div className="mt-3 text-xs text-gray-600 leading-5">
                       <div className="flex justify-between">
                         <span>Punch IN</span>
-                        <span className="font-medium">{user.punchIn || "--"}</span>
+                        <span className="font-medium">
+                          {user.punchIn || "--"}
+                        </span>
                       </div>
                       <div className="flex justify-between mt-1">
                         <span>Punch Out</span>
-                        <span className="font-medium text-orange-500">{user.punchOut || "PENDING"}</span>
+                        <span className="font-medium text-orange-500">
+                          {user.punchOut || "PENDING"}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -320,13 +351,16 @@ export default function AdminDashboard() {
               )}
             </div>
           </section>
-
-          {/* --- ABSENTEES / TABLE SECTION (Card) --- */}
+           {/* --- ABSENTEES / TABLE SECTION (Card) --- */}
           <section className="bg-white p-6 rounded-2xl border border-gray-100 shadow">
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-700">Total Absentees</h3>
-                <p className="text-xs text-gray-400 mt-1">Weekly / monthly absentee overview</p>
+                <h3 className="text-lg font-semibold text-gray-700">
+                  Total Absentees
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Weekly / monthly absentee overview
+                </p>
               </div>
 
               {/* TOP RIGHT quick link */}
@@ -395,11 +429,21 @@ export default function AdminDashboard() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Name</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Registration No</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Role</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Total Absents</th>
-                    <th className="p-3 text-left text-xs font-semibold text-gray-600">Detailed Report</th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">
+                      Name
+                    </th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">
+                      Registration No
+                    </th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">
+                      Role
+                    </th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">
+                      Total Absents
+                    </th>
+                    <th className="p-3 text-left text-xs font-semibold text-gray-600">
+                      Detailed Report
+                    </th>
                   </tr>
                 </thead>
 
@@ -408,16 +452,26 @@ export default function AdminDashboard() {
                     <tr key={i} className="border-b hover:bg-gray-50">
                       <td
                         className="p-3 text-indigo-600 cursor-pointer hover:underline"
-                        onClick={() => router.push(`/admin/students/${student.userId || student.regNo}`)}
+                        onClick={() =>
+                          router.push(
+                            `/admin/students/${student.userId || student.regNo}`
+                          )
+                        }
                       >
                         {student.name || "—"}
                       </td>
 
-                      <td className="p-3 text-sm text-gray-700">{student.userId || student.regNo || "—"}</td>
+                      <td className="p-3 text-sm text-gray-700">
+                        {student.userId || student.regNo || "—"}
+                      </td>
 
-                      <td className="p-3 text-sm text-gray-700">{student.role || "—"}</td>
+                      <td className="p-3 text-sm text-gray-700">
+                        {student.role || "—"}
+                      </td>
 
-                      <td className="p-3 text-sm text-gray-700">{student.absences ?? student.total ?? 0}</td>
+                      <td className="p-3 text-sm text-gray-700">
+                        {student.absences ?? student.total ?? 0}
+                      </td>
 
                       <td className="p-3">
                         <button

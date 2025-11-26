@@ -2,21 +2,27 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-/** Convert image from /public to Base64 */
+/** Convert image from /public to Base64 with error handling */
 async function loadImageAsBase64(url) {
-  const res = await fetch(url);
-  const blob = await res.blob();
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
-  });
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Failed to read image as Base64"));
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error("Error loading image:", error);
+    return null; // Return null to skip adding the image
+  }
 }
 
 /** sanitize filename */
 const sanitizeFilename = (name = "Attendance") =>
   name.replace(/[\/\\?%*:|"<>]/g, "_");
-
 
 // ---------------------------------------------------------
 //  HEADER (Sync version – required for jsPDF AutoTable)
@@ -25,8 +31,15 @@ function drawHeaderSync(doc, pageWidth, margin, title, student, logo) {
   const name = student?.name || "";
   const role = student?.role || "";
 
-  // LOGO (240px center)
-  doc.addImage(logo, "PNG", (pageWidth - 240) / 2, 20, 240, 120);
+  // LOGO (240px center) - Only add if logo is valid
+  if (logo) {
+    try {
+      doc.addImage(logo, (pageWidth - 240) / 2, 20, 240, 120);
+    } catch (error) {
+      console.warn("Failed to add logo to PDF:", error);
+      // Skip logo if it fails
+    }
+  }
 
   // MAIN TITLE
   doc.setFont("helvetica", "bold");
@@ -81,7 +94,6 @@ function drawHeaderSync(doc, pageWidth, margin, title, student, logo) {
   doc.line(margin.left, 280, pageWidth - margin.right, 280);
 }
 
-
 // ---------------------------------------------------------
 //  FOOTER
 // ---------------------------------------------------------
@@ -104,7 +116,6 @@ function drawPdfFooter(doc, pageWidth, margin, pageNumber) {
   );
 }
 
-
 // ---------------------------------------------------------
 //  FINAL PDF DOWNLOAD (MATCHES PRINT EXACTLY)
 // ---------------------------------------------------------
@@ -113,7 +124,21 @@ export async function downloadPDF(
   tableRecords = [],
   student = {}
 ) {
-  if (!tableRecords.length) return;
+  // Validate input data
+  if (!Array.isArray(tableRecords) || tableRecords.length === 0) {
+    console.error("No valid records provided for PDF generation.");
+    alert("No data available to generate PDF.");
+    return;
+  }
+
+  // Sanitize records to ensure strings
+  const sanitizedRecords = tableRecords.map((r) => ({
+    date: String(r.date || ""),
+    punchIn: String(r.punchIn || "—"),
+    punchOut: String(r.punchOut || "—"),
+  }));
+
+  console.log("Generating PDF with records:", sanitizedRecords); // Debug log
 
   // PAGE SIZE: width 850px (same as print)
   const doc = new jsPDF({
@@ -131,48 +156,49 @@ export async function downloadPDF(
   drawHeaderSync(doc, pageWidth, margin, tableTitle, student, logo);
 
   const head = [["Date", "Punch In", "Punch Out"]];
-  const body = tableRecords.map((r) => [
-    r.date,
-    r.punchIn ?? "—",
-    r.punchOut ?? "—",
-  ]);
+  const body = sanitizedRecords.map((r) => [r.date, r.punchIn, r.punchOut]);
 
-  autoTable(doc, {
-    head,
-    body,
-    startY: margin.top, // table starts after header
-    margin,
-    styles: {
-      font: "helvetica",
-      fontSize: 12,
-      cellPadding: 8,
-    },
-    headStyles: {
-      fillColor: [0, 51, 153],
-      textColor: 255,
-      fontStyle: "bold",
-    },
-    alternateRowStyles: { fillColor: [245, 247, 255] },
-    tableLineColor: [220, 220, 220],
-    tableLineWidth: 0.5,
+  try {
+    autoTable(doc, {
+      head,
+      body,
+      startY: margin.top, // table starts after header
+      margin,
+      styles: {
+        font: "helvetica",
+        fontSize: 12,
+        cellPadding: 8,
+      },
+      headStyles: {
+        fillColor: [0, 51, 153],
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      alternateRowStyles: { fillColor: [245, 247, 255] },
+      tableLineColor: [220, 220, 220],
+      tableLineWidth: 0.5,
 
-    // RUN ON EVERY PAGE
-    didDrawPage: (data) => {
-      const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
+      // RUN ON EVERY PAGE
+      didDrawPage: (data) => {
+        const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
 
-      // Redraw header for pages > 1
-      if (pageNumber > 1) {
-        drawHeaderSync(doc, pageWidth, margin, tableTitle, student, logo);
-      }
+        // Redraw header for pages > 1
+        if (pageNumber > 1) {
+          drawHeaderSync(doc, pageWidth, margin, tableTitle, student, logo);
+        }
 
-      drawPdfFooter(doc, pageWidth, margin, pageNumber);
-    },
-  });
+        drawPdfFooter(doc, pageWidth, margin, pageNumber);
+      },
+    });
 
-  const safe = sanitizeFilename(tableTitle);
-  doc.save(`${safe}.pdf`);
+    const safe = sanitizeFilename(tableTitle);
+    doc.save(`${safe}.pdf`);
+    console.log("PDF generated and downloaded successfully."); // Debug log
+  } catch (error) {
+    console.error("Error generating PDF:", error);
+    alert("Failed to generate PDF. Check console for details.");
+  }
 }
-
 
 // ---------------------------------------------------------
 //  PRINT VERSION (unchanged)
