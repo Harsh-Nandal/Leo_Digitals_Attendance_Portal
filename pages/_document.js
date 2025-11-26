@@ -10,8 +10,8 @@ export default function Document() {
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="theme-color" content="#000000" />
 
-        {/* ✅ TailwindCSS via CDN */}
-        <script src="https://cdn.tailwindcss.com"></script>
+        {/* ✅ TailwindCSS via CDN (kept but made non-blocking) */}
+        <script src="https://cdn.tailwindcss.com" defer></script>
 
         {/* ✅ Optional: Font */}
         <link
@@ -19,6 +19,7 @@ export default function Document() {
           rel="stylesheet"
         />
       </Head>
+
       <body className="bg-gray-50 text-gray-900 font-[Poppins]">
         <Main />
         <NextScript />

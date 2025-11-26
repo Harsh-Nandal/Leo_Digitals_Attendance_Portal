@@ -1,22 +1,11 @@
 // pages/_app.js
 import Head from "next/head";
-import { useState, useEffect } from "react";
 import "../styles/globals.css";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
-import SplashScreen from "../components/SplashScreen";
 
 export default function MyApp({ Component, pageProps }) {
-  const [appReady, setAppReady] = useState(false);
-
   useEffect(() => {
-    // ✅ Minimum splash time (in milliseconds)
-    const MIN_SPLASH_TIME = 750;
-
-    const timer = setTimeout(() => {
-      setAppReady(true);
-    }, MIN_SPLASH_TIME);
-
     // ✅ Detect WebView (Capacitor, Android WebView)
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
     const inWebView =
@@ -44,8 +33,6 @@ export default function MyApp({ Component, pageProps }) {
         }
       })();
     }
-
-    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -72,10 +59,10 @@ export default function MyApp({ Component, pageProps }) {
           type="image/jpeg"
         />
 
-        {/* ✅ Preload splash image */}
+        {/* ✅ Preload splash image (kept, but won't be shown since splash removed) */}
         <link rel="preload" as="image" href="/largeLogoImage.jpg" type="image/jpeg" />
 
-        {/* ✅ Tailwind CDN (if needed) */}
+        {/* ✅ Tailwind CDN */}
         <script src="https://cdn.tailwindcss.com"></script>
         <script
           dangerouslySetInnerHTML={{
@@ -94,13 +81,8 @@ export default function MyApp({ Component, pageProps }) {
         />
       </Head>
 
-      {/* ✅ Splash screen for minimum 0.5s */}
-      {!appReady && <SplashScreen />}
-
-      {/* ✅ Main content after splash */}
-      <div style={{ visibility: appReady ? "visible" : "hidden" }}>
-        <Component {...pageProps} />
-      </div>
+      {/* ✅ Main App Content (loads immediately) */}
+      <Component {...pageProps} />
     </>
   );
 }
