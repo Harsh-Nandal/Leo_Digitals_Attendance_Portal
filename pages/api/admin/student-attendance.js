@@ -1,7 +1,7 @@
 import connectDB from "../../../lib/mongodb";
 import Attendance from "../../../models/Attendance";
 // Assuming you have a Student model; if not, replace with your user/student model
-import Student from "../../../models/Student";
+import Student from "../../../models/User";
 
 export default async function handler(req, res) {
   if (req.method !== "GET")
