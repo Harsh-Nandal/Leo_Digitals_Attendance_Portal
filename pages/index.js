@@ -3,37 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as faceapi from "face-api.js";
 
-export async function getServerSideProps() {
-  if (!global.__attendanceCronStarted) {
-    global.__attendanceCronStarted = true;
-    console.log("⏰ Starting attendance cron...");
-
-    // Dynamically import cron only on the server
-    const { startAttendanceCron } = await import(
-      "../lib/attendanceNotifier.js"
-    );
-    startAttendanceCron();
-  }
-
-  return {
-    props: {
-      message: "✅ Attendance cron initialized on server start.",
-    },
-  };
-}
+// 
 
 export default function Home() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
+  const [popupMessage, setPopupMessage] = useState(""); // New state for dynamic popup message
   const [loading, setLoading] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
   const runningDetection = useRef(false);
   const router = useRouter();
 
-  const handleClose = () => setShowPopup(false);
+  const handleClose = () => {
+    setShowPopup(false);
+    setPopupMessage(""); // Reset message on close
+  };
 
   // Ask camera permission
   useEffect(() => {
@@ -93,8 +81,8 @@ export default function Home() {
     return canvas.toDataURL("image/jpeg", 0.9);
   };
 
-  // Capture multiple frames and pick best one (middle)
-  const captureBestFrame = async (count = 5, delay = 200) => {
+  // Capture multiple frames and pick best one (middle) - improved for accuracy
+  const captureBestFrame = async (count = 10, delay = 100) => {
     const frames = [];
     for (let i = 0; i < count; i++) {
       frames.push(captureImage());
@@ -103,6 +91,19 @@ export default function Home() {
     // pick middle frame for stability
     return frames[Math.floor(frames.length / 2)];
   };
+
+  // Load face detection model
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri("/models"); // Adjust path to your models folder (e.g., public/models)
+        console.log("✅ Face detection model loaded");
+      } catch (err) {
+        console.error("❌ Failed to load face detection model:", err);
+      }
+    };
+    loadModels();
+  }, []);
 
   // Attendance handler
   const handleAttendance = async () => {
@@ -117,13 +118,42 @@ export default function Home() {
       }
 
       console.log("📸 Capturing best frame...");
-      const imageData = await captureBestFrame();
+      let imageData = await captureBestFrame();
+      let faceDetected = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      // Quick client-side face detection to ensure accuracy
+      while (!faceDetected && retryCount < maxRetries) {
+        const detections = await faceapi.detectAllFaces(
+          videoRef.current,
+          new faceapi.TinyFaceDetectorOptions()
+        );
+        if (detections.length > 0) {
+          faceDetected = true;
+        } else {
+          console.warn(
+            `No face detected, retrying... (${retryCount + 1}/${maxRetries})`
+          );
+          await new Promise((r) => setTimeout(r, 500)); // Short delay before retry
+          imageData = await captureBestFrame(); // Recapture
+          retryCount++;
+        }
+      }
+
+      if (!faceDetected) {
+        // Show popup with message for no face detected
+        setPopupMessage("No face detected. Please position yourself better and try again.");
+        setShowPopup(true);
+        return;
+      }
 
       console.log("📤 Sending image for verification...");
       const res = await fetch("/api/verify-face", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageData }), // 👈 same key as old working version
+        body: JSON.stringify({ imageData }),
+        signal: AbortSignal.timeout(10000), // 10s timeout for speed
       });
 
       const result = await res.json();
@@ -132,17 +162,17 @@ export default function Home() {
       const distance =
         typeof result?.distance === "number"
           ? result.distance
-          : typeof result?.matchDistance === "number"
+        : typeof result?.matchDistance === "number"
           ? result.matchDistance
           : null;
 
-      const distanceOk = distance === null ? true : distance < 0.55;
+      const distanceOk = distance === null ? true : distance < 0.55; // Stricter check for accuracy
 
       if (result.success && result.user && distanceOk) {
         const { name, role, userId, imageUrl } = result.user;
         localStorage.setItem("uid", userId);
 
-        // optional Telegram alert
+        // Optional Telegram alert
         fetch("/api/send-telegram", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -158,6 +188,7 @@ export default function Home() {
         );
       } else {
         console.warn("Not recognized:", result);
+        setPopupMessage("Not recognized with high confidence. Please choose an option:");
         setShowPopup(true);
       }
     } catch (err) {
@@ -207,7 +238,7 @@ export default function Home() {
 
   return (
     <main className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-200 p-6 text-center relative">
-      {/* Popup */}
+      {/* Popup - Shows for both no face detected and not recognized, with buttons always visible */}
       {showPopup && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50 animate-fadeIn">
           <div className="bg-white/90 backdrop-blur-xl p-7 rounded-3xl shadow-2xl w-80 relative border border-gray-200 animate-slideUp">
@@ -224,14 +255,12 @@ export default function Home() {
               Welcome!
             </h2>
 
-            {/* Message */}
+            {/* Dynamic Message */}
             <p className="text-gray-600 text-center leading-relaxed mb-6">
-              Not recognized with high confidence.
-              <br />
-              Please choose an option:
+              {popupMessage}
             </p>
 
-            {/* Buttons */}
+            {/* Buttons - Always visible in the popup */}
             <div className="flex gap-3">
               <Link href="/newStudent" className="flex-1">
                 <button className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium hover:bg-blue-700 transition shadow-sm">

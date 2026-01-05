@@ -83,12 +83,20 @@ export default function AdminDashboard() {
     fetchData();
   }, [authChecked]);
 
-  // month filter
+  // month filter (FIXED: Added deduplication to remove duplicate entries in the table)
   const handleMonthFilter = (value) => {
     setSelectedMonth(value);
 
     if (!value) {
-      setFilteredMonthData(data.absenteesMonth);
+      // Deduplicate the full list as well
+      const seen = new Set();
+      const uniqueFull = (data.absenteesMonth || []).filter((item) => {
+        const id = item.userId || item.regNo;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setFilteredMonthData(uniqueFull);
       return;
     }
 
@@ -110,14 +118,23 @@ export default function AdminDashboard() {
       );
     });
 
-    setFilteredMonthData(filtered);
+    // FIXED: Deduplicate the filtered results to remove any duplicate entries
+    const seen = new Set();
+    const uniqueFiltered = filtered.filter((item) => {
+      const id = item.userId || item.regNo;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    setFilteredMonthData(uniqueFiltered);
   };
 
-  // FIXED: handle PDF download (now includes current date for weekly, and selected/current month for monthly)
+  // FIXED: handle PDF download (now correctly sends type, date for weekly, and month for monthly; removed unnecessary download=pdf param)
   const handleDownloadReport = async (student) => {
     try {
       const token = localStorage.getItem("adminToken");
-      const type = activeTab;
+      const type = activeTab; // "weekly" or "monthly"
 
       const userId = student.userId || student.regNo;
       if (!userId) {
@@ -131,15 +148,17 @@ export default function AdminDashboard() {
       const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
       const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-      // FIXED: Add &download=pdf to fetch ALL records (unfiltered) for PDF generation
-      let url = `/api/submit-attendance?userId=${userId}&type=${type}&download=pdf`;
+      // Build URL with correct params (no download=pdf, as it's not used by the API)
+      let url = `/api/submit-attendance?userId=${userId}&type=${type}`;
 
       if (type === "monthly") {
         const month = selectedMonth || currentMonth;
         url += `&month=${month}`;
       } else if (type === "weekly") {
-        url += `&date=${currentDate}`; // Assuming API uses date for current week
+        url += `&date=${currentDate}`; // End date for the week
       }
+
+      console.log("PDF Download URL:", url); // DEBUG: Log the URL to verify params
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -150,7 +169,7 @@ export default function AdminDashboard() {
         throw new Error(errorData.message || `API Error: ${res.statusText}`);
       }
 
-      // Parse JSON response (now includes all records due to download=pdf)
+      // Parse JSON response (now filtered and sorted by the API, including absences)
       const { records, student: studentData } = await res.json();
 
       // Validate data
@@ -162,7 +181,9 @@ export default function AdminDashboard() {
         return;
       }
 
-      // Generate PDF client-side using the downloadPDF function
+      console.log("Records for PDF:", records); // DEBUG: Log records to verify absences are included
+
+      // Generate PDF client-side using the downloadPDF function (absences will be highlighted in red)
       await downloadPDF("Attendance", records, studentData || student);
 
       toast.success("PDF downloaded successfully!", {
@@ -351,7 +372,7 @@ export default function AdminDashboard() {
               )}
             </div>
           </section>
-           {/* --- ABSENTEES / TABLE SECTION (Card) --- */}
+          {/* --- ABSENTEES / TABLE SECTION (Card) --- */}
           <section className="bg-white p-6 rounded-2xl border border-gray-100 shadow">
             <div className="flex items-start justify-between mb-6">
               <div>
@@ -386,7 +407,6 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
-
             {/* Tabs - Weekly / Monthly (styled like screenshot) */}
             <div className="flex items-center gap-4 mb-6">
               <button
@@ -423,7 +443,6 @@ export default function AdminDashboard() {
                 </div>
               )}
             </div>
-
             {/* Table header */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -448,57 +467,74 @@ export default function AdminDashboard() {
                 </thead>
 
                 <tbody>
-                  {(tableData || []).map((student, i) => (
-                    <tr key={i} className="border-b hover:bg-gray-50">
-                      <td
-                        className="p-3 text-indigo-600 cursor-pointer hover:underline"
-                        onClick={() =>
-                          router.push(
-                            `/admin/students/${student.userId || student.regNo}`
-                          )
-                        }
+                  {(() => {
+                    // FIXED: Deduplicate tableData to remove duplicate entries before rendering
+                    const uniqueTableData = (tableData || []).filter(
+                      (item, index, self) =>
+                        self.findIndex(
+                          (i) =>
+                            (i.userId || i.regNo) ===
+                            (item.userId || item.regNo)
+                        ) === index
+                    );
+
+                    return uniqueTableData.map((student, i) => (
+                      <tr
+                        key={student.userId || student.regNo || i}
+                        className="border-b hover:bg-gray-50"
                       >
-                        {student.name || "—"}
-                      </td>
-
-                      <td className="p-3 text-sm text-gray-700">
-                        {student.userId || student.regNo || "—"}
-                      </td>
-
-                      <td className="p-3 text-sm text-gray-700">
-                        {student.role || "—"}
-                      </td>
-
-                      <td className="p-3 text-sm text-gray-700">
-                        {student.absences ?? student.total ?? 0}
-                      </td>
-
-                      <td className="p-3">
-                        <button
-                          onClick={() => handleDownloadReport(student)}
-                          className="flex items-center gap-2 text-indigo-600 hover:underline text-sm"
+                        <td
+                          className="p-3 text-indigo-600 cursor-pointer hover:underline"
+                          onClick={() =>
+                            router.push(
+                              `/admin/students/${
+                                student.userId || student.regNo
+                              }`
+                            )
+                          }
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#4338CA"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="inline-block"
+                          {student.name || "—"}
+                        </td>
+
+                        <td className="p-3 text-sm text-gray-700">
+                          {student.userId || student.regNo || "—"}
+                        </td>
+
+                        <td className="p-3 text-sm text-gray-700">
+                          {student.role || "—"}
+                        </td>
+
+                        <td className="p-3 text-sm text-gray-700">
+                          {student.absences ?? student.total ?? 0}
+                        </td>
+
+                        <td className="p-3">
+                          <button
+                            onClick={() => handleDownloadReport(student)}
+                            className="flex items-center gap-2 text-indigo-600 hover:underline text-sm"
                           >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                          </svg>
-                          Download
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#4338CA"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="inline-block"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Download
+                          </button>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
 
                   {/* If no rows */}
                   {(!tableData || tableData.length === 0) && (

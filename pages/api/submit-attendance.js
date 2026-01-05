@@ -9,7 +9,8 @@ import moment from "moment-timezone";
 
 const APP_TZ = "Asia/Kolkata";
 const MIN_REPEAT_SECONDS =
-  process.env.MIN_REPEAT_SECONDS !== undefined && process.env.MIN_REPEAT_SECONDS !== ""
+  process.env.MIN_REPEAT_SECONDS !== undefined &&
+  process.env.MIN_REPEAT_SECONDS !== ""
     ? Number(process.env.MIN_REPEAT_SECONDS)
     : 60;
 const EFFECTIVE_MIN_REPEAT_SECONDS = Math.max(30, MIN_REPEAT_SECONDS);
@@ -77,200 +78,171 @@ export default async function handler(req, res) {
   try {
     await connectDB();
 
-    if (req.method === "POST") {
-      // Existing POST logic for punch-in/out (unchanged)
-      const { userId, name: reqName, role: reqRole, action: rawAction } = req.body || {};
-      const action = (rawAction || "in").toString().toLowerCase();
+    // ✅ HARD FIX: prevent duplicate userId + date forever
+    await Attendance.collection.createIndex(
+      { userId: 1, date: 1 },
+      { unique: true }
+    );
 
-      if (!userId) return res.status(400).json({ message: "Missing userId" });
+    if (req.method === "POST") {
+      const {
+        userId,
+        name: reqName,
+        role: reqRole,
+        action: rawAction,
+      } = req.body || {};
+      const action = (rawAction || "in").toLowerCase();
+
+      if (!userId) {
+        return res.status(400).json({ message: "Missing userId" });
+      }
 
       const uidStr = String(userId);
-      const user = await User.findOne({ userId: uidStr }).lean().catch(() => null);
-      const name = typeof reqName === "string" && reqName.trim() ? reqName.trim() : user?.name ?? "";
-      const role = typeof reqRole === "string" && reqRole.trim() ? reqRole.trim() : user?.role ?? "";
-
       const today = nowIST().format("YYYY-MM-DD");
 
-      // find & normalize existing record
-      let record = await Attendance.findOne({ userId: uidStr, date: today });
-      if (record) {
-        await normalizeRecordTimes(record);
-        record = await Attendance.findOne({ userId: uidStr, date: today });
-      }
+      const user = await User.findOne({ userId: uidStr })
+        .lean()
+        .catch(() => null);
+      const name = reqName?.trim() || user?.name || "";
+      const role = reqRole?.trim() || user?.role || "";
 
-      // debug logging (check Render logs)
-      const debugNow = nowIST();
-      console.log(`[attendance] server nowIST: ${debugNow.format()} (offset ${debugNow.format("Z")}) action=${action} user=${uidStr}`);
-
-      const buildResponse = (msg, statusLabel, rec, duration = null, extra = {}) => ({
-        message: msg,
-        status: statusLabel,
-        date: rec?.date ?? today,
-        punchIn: rec?.punchIn ?? null,
-        punchOut: rec?.punchOut ?? null,
-        duration,
-        name: rec?.name ?? name,
-        role: rec?.role ?? role,
-        ...extra,
-      });
-
-      // ACTION: IN
       if (action === "in") {
-        if (!record) {
-          const nowM = nowIST();
-          const punchInStr = make12(nowM);
-          const recordedAtIst = makeIstIso(nowM);
-          const newRec = new Attendance({
-            userId: uidStr,
-            name,
-            role,
+        const nowM = nowIST();
+        const punchInStr = make12(nowM);
+
+        try {
+          const doc = await Attendance.findOneAndUpdate(
+            { userId: uidStr, date: today },
+            {
+              $setOnInsert: {
+                userId: uidStr,
+                name,
+                role,
+                date: today,
+                punchIn: punchInStr,
+                recordedAt: nowM.toDate(),
+                recordedAtIst: makeIstIso(nowM),
+              },
+            },
+            { upsert: true, new: true }
+          );
+
+          if (doc.punchIn !== punchInStr) {
+            return res.status(200).json({
+              message: "Already Punched In",
+              status: "Punched In",
+              date: doc.date,
+              punchIn: doc.punchIn,
+              punchOut: doc.punchOut ?? null,
+            });
+          }
+
+          return res.status(200).json({
+            message: "Punched In Successfully",
+            status: "Punched In",
             date: today,
             punchIn: punchInStr,
-            recordedAt: nowM.toDate(),
-            recordedAtIst,
+            punchOut: null,
+            name,
+            role,
           });
-          await newRec.save();
-          return res.status(200).json(buildResponse("Punched In Successfully", "Punched In", newRec));
-        }
-
-        if (record.punchIn && !record.punchOut) {
-          const inM = parseDateTimeFlexible(record.date, record.punchIn);
-          const nowM = nowIST();
-          const elapsedSec = inM ? Math.floor(Math.max(0, nowM.valueOf() - inM.valueOf()) / 1000) : null;
-          return res.status(200).json({
-            ...buildResponse("Already Punched In", "Punched In", record),
-            elapsedSec,
-            waitSeconds: elapsedSec !== null ? Math.max(0, EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec) : null,
-          });
-        }
-
-        if (record.punchIn && record.punchOut) {
-          return res.status(200).json(buildResponse("Already Punched Out (today)", "Punched Out", record));
+        } catch (err) {
+          if (err.code === 11000) {
+            const existing = await Attendance.findOne({
+              userId: uidStr,
+              date: today,
+            });
+            return res.status(200).json({
+              message: "Already Punched In",
+              status: "Punched In",
+              date: existing.date,
+              punchIn: existing.punchIn,
+              punchOut: existing.punchOut ?? null,
+            });
+          }
+          throw err;
         }
       }
 
-      // ACTION: OUT
+     
+
+      /* ============================
+     ACTION: OUT  ✅ SAFE
+     ============================ */
       if (action === "out") {
-        if (!record) return res.status(400).json({ message: "No punch-in found for today. Please punch in first." });
+        const record = await Attendance.findOne({
+          userId: uidStr,
+          date: today,
+        });
 
-        if (!record.punchIn) {
-          const nowM = nowIST();
-          record.punchIn = make12(nowM);
-          if (name) record.name = name;
-          if (role) record.role = role;
-          record.recordedAt = nowM.toDate();
-          record.recordedAtIst = makeIstIso(nowM);
-          await record.save();
-          return res.status(200).json(buildResponse("Repaired missing punchIn", "Punched In", record));
+        if (!record || !record.punchIn) {
+          return res.status(400).json({
+            message: "No punch-in found for today. Please punch in first.",
+          });
         }
 
-        if (record.punchOut) return res.status(200).json(buildResponse("Already Punched Out", "Punched Out", record));
-
-        // single nowMoment for elapsed-check and saved punchOut (IST)
-        const nowMoment = nowIST();
-
-        // --- NEW: ensure stored punchIn is canonical BEFORE using it ---
-        const parsedIn = parseDateTimeFlexible(record.date, record.punchIn);
-        if (!parsedIn) {
-          console.error("[submit-attendance] could not parse stored punchIn:", record.punchIn);
-          return res.status(500).json({ message: "Server: cannot parse stored punchIn time." });
-        }
-        const canonicalPunchIn = make12(parsedIn);
-        // if canonical differs, persist the canonical value now so DB matches punchOut format
-        if (canonicalPunchIn !== record.punchIn) {
-          try {
-            await Attendance.updateOne({ _id: record._id }, { $set: { punchIn: canonicalPunchIn } });
-            // update local record too
-            record.punchIn = canonicalPunchIn;
-          } catch (e) {
-            console.warn("[submit-attendance] failed to persist canonical punchIn:", e);
-          }
-        }
-
-        const elapsedSec = Math.floor(Math.max(0, nowMoment.valueOf() - parsedIn.valueOf()) / 1000);
-        if (elapsedSec < EFFECTIVE_MIN_REPEAT_SECONDS) {
-          const wait = EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec;
-          return res.status(429).json({
-            message: `Too soon to punch out: you punched in ${elapsedSec} second(s) ago. Please wait ${wait} more second(s).`,
-            status: "Punched In",
+        if (record.punchOut) {
+          return res.status(200).json({
+            message: "Already Punched Out",
+            status: "Punched Out",
             date: record.date,
             punchIn: record.punchIn,
-            punchOut: null,
-            duration: null,
-            name: record.name,
-            role: record.role,
-            waitSeconds: wait,
+            punchOut: record.punchOut,
           });
         }
 
-        // Prepare update (store punchOut canonical + recordedAtIst)
-        const outStr = make12(nowMoment);
-        const update = {
-          punchOut: outStr,
-          recordedAt: nowMoment.toDate(),
-          recordedAtIst: makeIstIso(nowMoment),
-        };
-        if (name) update.name = name;
-        if (role) update.role = role;
+        const nowM = nowIST();
 
-        // Atomic update by userId + date + empty punchOut
-        const updated = await Attendance.findOneAndUpdate(
-          {
-            userId: uidStr,
-            date: today,
-            punchOut: { $in: [null, undefined, ""] },
-          },
-          { $set: update },
-          { new: true }
+        // normalize punchIn before duration calc
+        const parsedIn = parseDateTimeFlexible(record.date, record.punchIn);
+        if (!parsedIn) {
+          return res.status(500).json({
+            message: "Server error: invalid punch-in time",
+          });
+        }
+
+        const elapsedSec = Math.floor(
+          (nowM.valueOf() - parsedIn.valueOf()) / 1000
         );
 
-        if (!updated) {
-          // race lost — return latest
-          const latest = await Attendance.findOne({ userId: uidStr, date: today });
-          let computedDuration = null;
-          try {
-            if (latest?.punchIn && latest?.punchOut) {
-              const inM2 = parseDateTimeFlexible(latest.date, latest.punchIn);
-              const outM2 = parseDateTimeFlexible(latest.date, latest.punchOut);
-              if (inM2 && outM2) {
-                const diff = Math.max(0, Math.floor((outM2.valueOf() - inM2.valueOf()) / 1000));
-                computedDuration = secondsToHhMmSs(diff);
-              }
-            }
-          } catch {
-            computedDuration = null;
-          }
-
-          return res.status(200).json({
-            message: "Already Punched Out (race resolved)",
-            status: "Punched Out",
-            date: latest.date,
-            punchIn: latest.punchIn,
-            punchOut: latest.punchOut ?? null,
-            duration: computedDuration,
-            name: latest.name,
-            role: latest.role,
+        if (elapsedSec < EFFECTIVE_MIN_REPEAT_SECONDS) {
+          return res.status(429).json({
+            message: `Too soon to punch out. Wait ${
+              EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec
+            } seconds.`,
+            status: "Punched In",
+            punchIn: record.punchIn,
+            punchOut: null,
+            waitSeconds: EFFECTIVE_MIN_REPEAT_SECONDS - elapsedSec,
           });
         }
 
-        // success -> compute duration
-        let duration = null;
-        try {
-          const inM2 = parseDateTimeFlexible(updated.date, updated.punchIn);
-          const outM2 = parseDateTimeFlexible(updated.date, updated.punchOut);
-          if (inM2 && outM2) {
-            const diff = Math.max(0, Math.floor((outM2.valueOf() - inM2.valueOf()) / 1000));
-            duration = secondsToHhMmSs(diff);
-          }
-        } catch {
-          duration = null;
-        }
+        const outStr = make12(nowM);
+        record.punchOut = outStr;
+        record.recordedAt = nowM.toDate();
+        record.recordedAtIst = makeIstIso(nowM);
+        if (name) record.name = name;
+        if (role) record.role = role;
 
-        return res.status(200).json(buildResponse("Punched Out Successfully", "Punched Out", updated, duration));
+        await record.save();
+
+        const duration = secondsToHhMmSs(elapsedSec);
+
+        return res.status(200).json({
+          message: "Punched Out Successfully",
+          status: "Punched Out",
+          date: record.date,
+          punchIn: record.punchIn,
+          punchOut: outStr,
+          duration,
+          name: record.name,
+          role: record.role,
+        });
       }
 
-      // fallback
-      return res.status(400).json({ message: "Invalid action. Use action:'in' or action:'out'." });
+      return res.status(400).json({
+        message: "Invalid action. Use action: 'in' or 'out'.",
+      });
     } else if (req.method === "GET") {
       // Updated GET logic for fetching and downloading PDFs (return JSON for client-side generation)
       const { userId, type = "weekly", month, download } = req.query;
@@ -279,55 +251,80 @@ export default async function handler(req, res) {
 
       const uidStr = String(userId);
 
-      // Fetch all records for the user
-      const allRecords = await Attendance.find({ userId: uidStr }).sort({ date: 1 }).lean();
+      // FIXED: Use aggregation to fetch and deduplicate records by date (keep most recent per date)
+      const uniqueRecords = await Attendance.aggregate([
+        { $match: { userId: uidStr } },
+        { $sort: { date: 1, recordedAt: -1 } }, // Sort by date asc, then recordedAt desc
+        { $group: { _id: "$date", record: { $first: "$$ROOT" } } }, // Group by date, take first (most recent)
+        { $replaceRoot: { newRoot: "$record" } },
+        { $sort: { date: 1 } }, // Final sort by date asc
+      ]);
 
       // Fetch student details for PDF
-      const student = await User.findOne({ userId: uidStr }).lean().catch(() => ({}));
+      const student = await User.findOne({ userId: uidStr })
+        .lean()
+        .catch(() => ({}));
 
-      console.log(`Query params: userId=${userId}, type=${type}, month=${month}, download=${download}`);
-      console.log(`Fetched ${allRecords.length} records for userId: ${userId}`, allRecords.map(r => ({ date: r.date, punchIn: r.punchIn })));
+      // console.log(
+      //   `Query params: userId=${userId}, type=${type}, month=${month}, download=${download}`
+      // );
+      // console.log(
+      //   `Fetched and deduplicated to ${uniqueRecords.length} records for userId: ${userId}`,
+      //   uniqueRecords.map((r) => ({ date: r.date, punchIn: r.punchIn }))
+      // );
 
-      let filteredRecords = allRecords;
+      let filteredRecords = uniqueRecords;
+      let absences = 0; // Initialize absences
 
       // Apply filtering only for JSON responses (not for PDF downloads, to show full history)
       if (download !== "pdf") {
         if (type === "weekly") {
-          // FIXED: Calculate last 7 days (from today back 7 days)
-          const now = new Date();
-          const endDate = new Date(now);
-          endDate.setHours(23, 59, 59, 999);
-          const startDate = new Date(now);
-          startDate.setDate(now.getDate() - 6); // 7 days back including today
-          startDate.setHours(0, 0, 0, 0);
+          // FIXED: Calculate last 7 days using IST (from today back 7 days)
+          const now = nowIST();
+          const endDate = now.clone().endOf("day");
+          const startDate = now.clone().subtract(6, "days").startOf("day");
 
-          const weeklyStart = startDate.toISOString().split('T')[0];
-          const weeklyEnd = endDate.toISOString().split('T')[0];
+          const weeklyStart = startDate.format("YYYY-MM-DD");
+          const weeklyEnd = endDate.format("YYYY-MM-DD");
 
-          console.log(`Weekly range (last 7 days): ${weeklyStart} to ${weeklyEnd}`);
+          console.log(
+            `Weekly range (last 7 days in IST): ${weeklyStart} to ${weeklyEnd}`
+          );
 
-          filteredRecords = allRecords.filter(record => {
+          filteredRecords = uniqueRecords.filter((record) => {
             const recordDate = record.date;
-            const isInRange = recordDate >= weeklyStart && recordDate <= weeklyEnd;
-            console.log(`Checking record: date=${recordDate}, in range ${weeklyStart} to ${weeklyEnd}? ${isInRange}`);
+            const isInRange =
+              recordDate >= weeklyStart && recordDate <= weeklyEnd;
+            console.log(
+              `Checking record: date=${recordDate}, in range ${weeklyStart} to ${weeklyEnd}? ${isInRange}`
+            );
             return isInRange;
           });
         } else if (type === "monthly") {
           // FIXED: If no month specified, use current month (e.g., November); otherwise, use provided month
           const targetMonth = month || nowIST().format("YYYY-MM");
-          filteredRecords = allRecords.filter(record => record.date.startsWith(targetMonth));
-          console.log(`Monthly range (current or specified month): ${targetMonth}`);
+          filteredRecords = uniqueRecords.filter((record) =>
+            record.date.startsWith(targetMonth)
+          );
+          // FIXED: Calculate absences correctly by considering only days 1-28 as working days (cap at 28)
+          const targetMonthMoment = moment(targetMonth, "YYYY-MM");
+          const daysInMonth = targetMonthMoment.daysInMonth();
+          const effectiveDays = Math.min(daysInMonth, 28); // Cap at 28 to exclude 29, 30, 31
+          absences = Math.max(0, effectiveDays - filteredRecords.length);
+          console.log(
+            `Monthly range (current or specified month): ${targetMonth}, effective days: ${effectiveDays}, records: ${filteredRecords.length}, absences: ${absences}`
+          );
         }
       }
 
-      console.log(`Filtered ${type} records: ${filteredRecords.length}`);
+      
 
       if (download === "pdf") {
-        // Return JSON data for client-side PDF generation (full records + student)
-        res.status(200).json({ records: allRecords, student });
+        // Return JSON data for client-side PDF generation (full unique records + student + absences)
+        res.status(200).json({ records: uniqueRecords, student, absences });
       } else {
-        // Return JSON data (with filtering applied)
-        res.status(200).json({ records: filteredRecords });
+        // Return JSON data (with filtering applied + absences for monthly)
+        res.status(200).json({ records: filteredRecords, absences });
       }
     } else {
       res.status(405).json({ message: "Method Not Allowed" });

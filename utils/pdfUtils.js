@@ -11,7 +11,8 @@ async function loadImageAsBase64(url) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error("Failed to read image as Base64"));
+      reader.onerror = () =>
+        reject(new Error("Failed to read image as Base64"));
       reader.readAsDataURL(blob);
     });
   } catch (error) {
@@ -122,7 +123,8 @@ function drawPdfFooter(doc, pageWidth, margin, pageNumber) {
 export async function downloadPDF(
   tableTitle = "Attendance",
   tableRecords = [],
-  student = {}
+  student = {},
+  type = "weekly" // Add type parameter to determine period
 ) {
   // Validate input data
   if (!Array.isArray(tableRecords) || tableRecords.length === 0) {
@@ -131,8 +133,51 @@ export async function downloadPDF(
     return;
   }
 
+  // Generate full list of dates for the period, marking absences
+  let fullRecords = [];
+  if (type === "weekly") {
+    // For weekly, generate last 7 days
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - 6); // Last 7 days including today
+    const recordMap = new Map(tableRecords.map(r => [r.date, r]));
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      const record = recordMap.get(dateStr);
+      if (record) {
+        fullRecords.push(record);
+      } else {
+        fullRecords.push({ date: dateStr, punchIn: "Absent"|| "ABSENT", punchOut: "Absent"|| "ABSENT" });
+      }
+    }
+  } else if (type === "monthly") {
+    // For monthly, generate days 1 to 28 of the month from records
+    const recordMap = new Map(tableRecords.map(r => [r.date, r]));
+    const firstRecord = tableRecords[0];
+    if (firstRecord) {
+      const [year, month] = firstRecord.date.split('-');
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const effectiveDays = Math.min(daysInMonth, 28); // Cap at 28
+      for (let day = 1; day <= effectiveDays; day++) {
+        const dateStr = `${year}-${month.padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const record = recordMap.get(dateStr);
+        if (record) {
+          fullRecords.push(record);
+        } else {
+          fullRecords.push({ date: dateStr, punchIn: "Absent", punchOut: "Absent" });
+        }
+      }
+    } else {
+      fullRecords = tableRecords; // Fallback
+    }
+  } else {
+    fullRecords = tableRecords; // Fallback for other types
+  }
+
   // Sanitize records to ensure strings
-  const sanitizedRecords = tableRecords.map((r) => ({
+  const sanitizedRecords = fullRecords.map((r) => ({
     date: String(r.date || ""),
     punchIn: String(r.punchIn || "—"),
     punchOut: String(r.punchOut || "—"),
@@ -177,6 +222,13 @@ export async function downloadPDF(
       alternateRowStyles: { fillColor: [245, 247, 255] },
       tableLineColor: [220, 220, 220],
       tableLineWidth: 0.5,
+
+      // FIXED: Highlight "Absent" text in red without changing background
+      didParseCell: (data) => {
+        if (data.section === "body" && (data.cell.raw === "Absent" || data.cell.raw === "ABSENT")) {
+          data.cell.styles.textColor = [255, 0, 0]; // Red text for "Absent"
+        }
+      },
 
       // RUN ON EVERY PAGE
       didDrawPage: (data) => {
@@ -231,7 +283,15 @@ function buildPrintHtml(title, rowsHtml, student) {
 html, body { font-family: "Poppins", Arial; background:#fff; margin:0; padding:0; }
 .print-wrapper { width:850px; margin:auto; padding:20px; }
 .header { text-align:center; }
-.logo { width:240px; margin-bottom:10px; }
+.logo {
+  max-width: 240px;   
+  width: 100%;        
+  height: auto;      
+  object-fit: contain;
+  margin-bottom: 10px;
+  display: block;
+}
+
 .institute { font-size:20px; font-weight:700; color:#cc0000; }
 .sub-title { font-size:12px; margin-top:4px; color:#333; }
 .iso-banner { background:#003399; color:#fff; padding:6px 0; margin-top:8px; font-size:12px; font-weight:bold; }
