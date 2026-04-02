@@ -41,7 +41,7 @@ export default function AdminSidebar({ setView, setShowAbsent }) {
       {/* Logo */}
       <div className="px-6 py-8 flex items-center justify-center border-b border-gray-200">
         <img
-          src="/DesinerzAcademyDark.png"
+          src="/main_logo.png"
           alt="Logo"
           className="w-40 h-auto object-contain"
         />

@@ -42,8 +42,8 @@ export default function AdminLogin() {
         {/* Logo */}
         <div className="flex justify-center mb-6">
           <Image
-            src="/DesinerzAcademyDark.png"
-            alt="Desinerz Academy Logo"
+            src="/main_logo.png"
+            alt="Leo Digitals Logo"
             width={300}
             height={300}
             priority
