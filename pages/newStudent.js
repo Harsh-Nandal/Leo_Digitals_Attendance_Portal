@@ -157,7 +157,7 @@ export default function Register() {
           <>
             <Link href="/" className="block text-center mb-4">
               <img
-                src="/DesinerzAcademyDark.png"
+                src="/main_logo.png"
                 alt="Logo"
                 className="w-full max-w-[200px] h-auto drop-shadow-lg mx-auto"
               />

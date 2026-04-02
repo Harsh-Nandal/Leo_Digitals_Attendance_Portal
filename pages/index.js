@@ -280,7 +280,7 @@ export default function Home() {
 
       {/* Logo */}
       <img
-        src="/DesinerzAcademyDark.png"
+        src="/main_logo.png"
         alt="Logo"
         className="w-100 h-auto mb-4 drop-shadow-lg"
       />
@@ -302,7 +302,7 @@ export default function Home() {
       </div>
 
       <h2 className="text-2xl font-bold text-gray-800 mb-6 leading-snug">
-        Welcome <br /> to <br /> DESINERZ ACADEMY
+        Welcome <br /> to <br /> Leo Digitalz 
       </h2>
 
       <button

@@ -133,8 +133,8 @@ export default function PunchAttendance() {
         {/* LOGO */}
         <div className="flex justify-center mb-4">
           <img
-            src="/DesinerzAcademyDark.png"
-            alt="Designerz Logo"
+            src="/main_logo.png"
+            alt="Leo Digitals Logo"
             className="w-48 h-auto"
           />
         </div>
