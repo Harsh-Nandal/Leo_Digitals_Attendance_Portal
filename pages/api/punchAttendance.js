@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     if (!userId || !name) {
       return res.status(400).json({
         success: false,
-        message: "Student data missing",
+        message: "User data missing",
       });
     }
 
@@ -85,7 +85,7 @@ export default async function handler(req, res) {
         chat_id: CHAT_ID,
         text:
           `📌 Attendance Update\n\n` +
-          `Student: ${name}\n` +
+          `User: ${name}\n` +
           `ID: ${userId}\n` +
           `Punch: ${finalPunch.toUpperCase()}\n` +
           `Time: ${fullTime}`,

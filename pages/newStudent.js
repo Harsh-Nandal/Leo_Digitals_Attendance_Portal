@@ -115,7 +115,7 @@ export default function Register() {
       // Step 2: Send to Telegram (✅ NEW FIX)
       try {
         const botToken = '8072882753:AAGXU1N6E3ZDGHb91oxCWUaBZSRHaSvIzSY';
-        const chatId = '6693684914'; // student’s or admin’s chat ID
+        const chatId = '6693684914'; // user's or admin’s chat ID
 
         // Send photo message
         await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
@@ -163,7 +163,7 @@ export default function Register() {
               />
             </Link>
             <h2 className="text-xl font-bold text-center mb-4 text-gray-800">
-              Register Student / Faculty
+              Register User / Faculty
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
@@ -189,7 +189,7 @@ export default function Register() {
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
               >
-                <option value="student">Student</option>
+                <option value="User">User</option>
                 <option value="faculty">Faculty</option>
               </select>
 

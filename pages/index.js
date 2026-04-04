@@ -264,7 +264,7 @@ export default function Home() {
             <div className="flex gap-3">
               <Link href="/newStudent" className="flex-1">
                 <button className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium hover:bg-blue-700 transition shadow-sm">
-                  New Student
+                  New User
                 </button>
               </Link>
 
