@@ -3,13 +3,15 @@ import fetch from 'node-fetch';
 import cron from 'node-cron';
 import connectDB from '../../lib/mongodb';
 import Attendance from '../../models/Attendance';
-import Students from '../../models/User'; // Assuming you have a Students model
+import Students from '../../models/User'; // Assuming you have a Users model
 
 // const BOT_TOKEN = '8072882753:AAGXU1N6E3ZDGHb91oxCWUaBZSRHaSvIzSY'; // Move to .env for security
 // const CHAT_ID = '6693684914'; // Your Telegram ID or group/channel ID
 
-const BOT_TOKEN = "8430452006:AAEgmLpUCqPCLLUaK-WxWvyz5iMXPOAgef0";
-const CHAT_ID = 6251710308;
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+
 
 // Flag to ensure cron jobs are scheduled only once
 let isScheduled = false;
@@ -31,9 +33,9 @@ async function sendDailyReport() {
     const now = new Date();
     const date = now.toISOString().split('T')[0];
 
-    // Get all students
+    // Get all Users
     const allStudents = await Students.find({});
-    console.log(`Found ${allStudents.length} students`); // Debug log
+    console.log(`Found ${allStudents.length} Users`); // Debug log
     // Get today's attendances
     const attendances = await Attendance.find({ date });
     console.log(`Found ${attendances.length} attendances for ${date}`); // Debug log
@@ -45,12 +47,12 @@ async function sendDailyReport() {
 
     // Build the message
     let message = `📊 *Daily Attendance Report for ${date}*\n\n`;
-    message += `✅ *Present Students (${present.length}):*\n`;
+    message += `✅ *Present Users (${present.length}):*\n`;
     present.forEach(s => {
       const att = attendances.find(a => a.userId === s.userId);
       message += `- ${s.name} (ID: ${s.userId}) - In: ${att.punchIn}, Out: ${att.punchOut || 'Not yet'}\n`;
     });
-    message += `\n❌ *Absent Students (${absent.length}):*\n`;
+    message += `\n❌ *Absent Users (${absent.length}):*\n`;
     absent.forEach(s => {
       message += `- ${s.name} (ID: ${s.userId})\n`;
     });

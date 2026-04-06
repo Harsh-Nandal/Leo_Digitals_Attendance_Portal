@@ -132,7 +132,7 @@ export default async function handler(req, res) {
       finalRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
 
       if (!studentInfo) {
-        return res.status(404).json({ message: "No student info found for this user." });
+        return res.status(404).json({ message: "No User info found for this user." });
       }
 
       return res.json({
@@ -167,7 +167,7 @@ export default async function handler(req, res) {
 
       console.log(`Fetched existing monthly records: ${existingRecords.length}`); // DEBUG
 
-      // If no student info from Student model, try from existing records
+      // If no User info from User model, try from existing records
       if (!studentInfo && existingRecords.length > 0) {
         studentInfo = {
           name: existingRecords[0].name,
@@ -220,7 +220,7 @@ export default async function handler(req, res) {
       finalRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
 
       if (!studentInfo) {
-        return res.status(404).json({ message: "No student info found for this user." });
+        return res.status(404).json({ message: "No User info found for this user." });
       }
 
       return res.json({

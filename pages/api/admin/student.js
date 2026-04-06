@@ -23,10 +23,10 @@ export default async function handler(req, res) {
     // DB connect
     await connectDB();
 
-    // Fetch attendance for this student
+    // Fetch attendance for this Users
     const records = await Attendance.find({ userId: id }).lean();
     if (!records.length) {
-      return res.status(404).json({ message: "No records found for this student" });
+      return res.status(404).json({ message: "No records found for this Users" });
     }
 
     const studentData = {

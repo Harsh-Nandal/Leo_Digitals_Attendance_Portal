@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as faceapi from "face-api.js";
 
-// 
+//
 
 export default function Home() {
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -127,13 +127,13 @@ export default function Home() {
       while (!faceDetected && retryCount < maxRetries) {
         const detections = await faceapi.detectAllFaces(
           videoRef.current,
-          new faceapi.TinyFaceDetectorOptions()
+          new faceapi.TinyFaceDetectorOptions(),
         );
         if (detections.length > 0) {
           faceDetected = true;
         } else {
           console.warn(
-            `No face detected, retrying... (${retryCount + 1}/${maxRetries})`
+            `No face detected, retrying... (${retryCount + 1}/${maxRetries})`,
           );
           await new Promise((r) => setTimeout(r, 500)); // Short delay before retry
           imageData = await captureBestFrame(); // Recapture
@@ -143,7 +143,9 @@ export default function Home() {
 
       if (!faceDetected) {
         // Show popup with message for no face detected
-        setPopupMessage("No face detected. Please position yourself better and try again.");
+        setPopupMessage(
+          "No face detected. Please position yourself better and try again.",
+        );
         setShowPopup(true);
         return;
       }
@@ -162,9 +164,9 @@ export default function Home() {
       const distance =
         typeof result?.distance === "number"
           ? result.distance
-        : typeof result?.matchDistance === "number"
-          ? result.matchDistance
-          : null;
+          : typeof result?.matchDistance === "number"
+            ? result.matchDistance
+            : null;
 
       const distanceOk = distance === null ? true : distance < 0.55; // Stricter check for accuracy
 
@@ -181,14 +183,16 @@ export default function Home() {
 
         router.push(
           `/success?name=${encodeURIComponent(name)}&role=${encodeURIComponent(
-            role
+            role,
           )}&userId=${encodeURIComponent(userId)}&image=${encodeURIComponent(
-            imageUrl || ""
-          )}&imageData=${encodeURIComponent(imageData)}`
+            imageUrl || "",
+          )}&imageData=${encodeURIComponent(imageData)}`,
         );
       } else {
         console.warn("Not recognized:", result);
-        setPopupMessage("Not recognized with high confidence. Please choose an option:");
+        setPopupMessage(
+          "Not recognized with high confidence. Please choose an option:",
+        );
         setShowPopup(true);
       }
     } catch (err) {
@@ -218,7 +222,7 @@ export default function Home() {
     return () => {
       window.removeEventListener(
         "beforeinstallprompt",
-        handleBeforeInstallPrompt
+        handleBeforeInstallPrompt,
       );
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
@@ -237,39 +241,37 @@ export default function Home() {
   };
 
   return (
-    <main className="h-screen w-screen flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-200 p-6 text-center relative">
-      {/* Popup - Shows for both no face detected and not recognized, with buttons always visible */}
+    <main className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-200 px-4 py-6 relative overflow-hidden">
+      {/* Background Glow */}
+      <div className="absolute w-[500px] h-[500px] bg-blue-200 rounded-full blur-3xl opacity-30 top-[-100px] left-[-100px]" />
+      <div className="absolute w-[400px] h-[400px] bg-indigo-200 rounded-full blur-3xl opacity-30 bottom-[-100px] right-[-100px]" />
+
+      {/* Popup */}
       {showPopup && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-50 animate-fadeIn">
-          <div className="bg-white/90 backdrop-blur-xl p-7 rounded-3xl shadow-2xl w-80 relative border border-gray-200 animate-slideUp">
-            {/* Close Button */}
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-md z-50">
+          <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-[90%] max-w-sm relative border border-gray-200 animate-[fadeIn_0.3s_ease]">
             <button
               onClick={handleClose}
-              className="absolute top-3 right-3 text-gray-500 hover:text-red-500 transition text-xl"
+              className="absolute top-3 right-4 text-gray-500 hover:text-red-500 text-xl"
             >
               ✕
             </button>
 
-            {/* Title */}
             <h2 className="text-2xl font-bold text-gray-800 text-center mb-2">
-              Welcome!
+              Welcome 👋
             </h2>
 
-            {/* Dynamic Message */}
-            <p className="text-gray-600 text-center leading-relaxed mb-6">
-              {popupMessage}
-            </p>
+            <p className="text-gray-600 text-center mb-6">{popupMessage}</p>
 
-            {/* Buttons - Always visible in the popup */}
             <div className="flex gap-3">
               <Link href="/newStudent" className="flex-1">
-                <button className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-medium hover:bg-blue-700 transition shadow-sm">
+                <button className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-2.5 rounded-xl font-medium hover:scale-105 transition">
                   New User
                 </button>
               </Link>
 
               <Link href="/punchPage" className="flex-1">
-                <button className="w-full bg-gray-200 text-gray-800 py-2.5 rounded-xl font-medium hover:bg-gray-300 transition shadow-sm">
+                <button className="w-full bg-gray-200 text-gray-800 py-2.5 rounded-xl font-medium hover:bg-gray-300 transition">
                   Registered
                 </button>
               </Link>
@@ -278,49 +280,72 @@ export default function Home() {
         </div>
       )}
 
-      {/* Logo */}
-      <img
-        src="/main_logo.png"
-        alt="Logo"
-        className="w-100 h-auto mb-4 drop-shadow-lg"
-      />
+      {/* Main Container */}
+      <div className="w-full max-w-6xl bg-white/60 backdrop-blur-xl shadow-xl rounded-3xl p-6 md:p-10 flex flex-col md:flex-row items-center gap-10 border border-gray-200">
+        {/* LEFT - Camera */}
+        <div className="flex flex-col items-center flex-1">
+          <div className="relative w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-[6px] border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.4)] flex items-center justify-center">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover rounded-full"
+            />
 
-      {/* Camera */}
-      <div className="relative w-64 h-64 rounded-full overflow-hidden border-4 border-blue-500 shadow-lg mb-4 flex items-center justify-center">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover rounded-full"
-        />
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full">
-            <span className="text-white font-semibold">Detecting...</span>
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full">
+                <span className="text-white font-semibold animate-pulse">
+                  Detecting...
+                </span>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Logo */}
+          <img
+            src="/main_logo.png"
+            alt="Logo"
+            className="w-40 md:w-48 mt-6 drop-shadow-xl"
+          />
+        </div>
+
+        {/* RIGHT - Content */}
+        <div className="flex flex-col items-center md:items-start text-center md:text-left flex-1">
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-800 leading-tight mb-3">
+            Welcome to <br />
+            <span className="text-blue-600">Leo Digitalz</span>
+          </h1>
+
+          <p className="hidden lg:block text-gray-600 mb-6 max-w-md text-base leading-relaxed">
+            Smart face recognition attendance system. Just look into the camera
+            and mark your attendance instantly.
+          </p>
+
+          <button
+            onClick={handleAttendance}
+            disabled={loading || !videoReady}
+            className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-8 py-3 rounded-xl text-lg shadow-lg hover:scale-105 transition disabled:opacity-50 mb-4"
+          >
+            {loading ? "Detecting..." : "Mark Attendance"}
+          </button>
+          <Link
+            href="/newStudent"
+            className="text-sm text-gray-500 hover:text-gray-700 transition mb-6"
+          >
+            New User? Register here
+          </Link>
+
+          {!isInstalled && installPrompt && (
+            <button
+              onClick={handleInstall}
+              className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-2 rounded-lg shadow hover:scale-105 transition"
+            >
+              Install App
+            </button>
+          )}
+        </div>
       </div>
-
-      <h2 className="text-2xl font-bold text-gray-800 mb-6 leading-snug">
-        Welcome <br /> to <br /> Leo Digitalz 
-      </h2>
-
-      <button
-        onClick={handleAttendance}
-        disabled={loading || !videoReady}
-        className="bg-green-600 text-white px-6 py-3 rounded-lg text-lg shadow hover:bg-green-700 transition disabled:bg-green-400 mb-4"
-      >
-        {loading ? "Detecting..." : "Mark Your Daily Attendance"}
-      </button>
-
-      {!isInstalled && installPrompt && (
-        <button
-          onClick={handleInstall}
-          className="bg-indigo-600 text-white px-5 py-2 rounded-lg shadow hover:bg-indigo-700 transition"
-        >
-          Install App
-        </button>
-      )}
     </main>
   );
 }
